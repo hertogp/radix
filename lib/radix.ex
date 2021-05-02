@@ -282,8 +282,8 @@ defmodule Radix do
 
   """
   @spec get(tree, key) :: keyval | nil
-  def get(t, key) do
-    case leaf(t, key) do
+  def get(tree, key) do
+    case leaf(tree, key) do
       nil -> nil
       leaf -> List.keyfind(leaf, key, 0)
     end
@@ -398,7 +398,7 @@ defmodule Radix do
 
   """
   @spec lpm(tree | leaf, key) :: keyval | nil
-  def lpm({b, l, r}, key) do
+  def lpm({b, l, r} = _tree, key) do
     case bit(key, b) do
       0 ->
         lpm(l, key)
@@ -411,8 +411,11 @@ defmodule Radix do
     end
   end
 
-  def lpm(nil, _key), do: nil
-  def lpm(leaf, key), do: Enum.find(leaf, fn {k, _} -> is_prefix?(k, key) end)
+  def lpm(nil, _key),
+    do: nil
+
+  def lpm(leaf, key),
+    do: Enum.find(leaf, fn {k, _} -> is_prefix?(k, key) end)
 
   @doc """
   Get all `{k,v}`-pairs where `k` is a prefix of *key*.
@@ -464,7 +467,7 @@ defmodule Radix do
       []
   """
   @spec rpm(tree | leaf, key) :: list(keyval)
-  def rpm({b, l, r}, key) when bit_size(key) < b do
+  def rpm({b, l, r} = _tree, key) when bit_size(key) < b do
     rpm(r, key) ++ rpm(l, key)
   end
 
@@ -477,8 +480,11 @@ defmodule Radix do
     end
   end
 
-  def rpm(nil, _), do: []
-  def rpm(leaf, key), do: Enum.filter(leaf, fn {k, _} -> is_prefix?(key, k) end)
+  def rpm(nil, _),
+    do: []
+
+  def rpm(leaf, key),
+    do: Enum.filter(leaf, fn {k, _} -> is_prefix?(key, k) end)
 
   # TRAVERSALs
 
