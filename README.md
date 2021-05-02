@@ -1,12 +1,11 @@
-# Radix
+# README
 
 A path-compressed Patricia trie with one-way branching removed.
 
-- uses `bitstring`'s as keys to index into the trie
-- implemented in pure Elixir
-- stores {k,v}-pairs
+- stores `{k,v}`-pairs, where `k` is a bitstring
+- returns the `{k,v}`-pair, not just the value
 - supports longest prefix matching
-- tree traversals
+- and tree traversals
 
 ## Example
 
@@ -23,6 +22,23 @@ apm(t, <<1,1,1,0>>)     #-> [{<<1, 1, 1, 0::size(1)>>, "1.1.1.0/25"}, {<<1, 1, 1
 # all reverse prefix matches (i.e. where search key is prefix of a stored key)
 rpm(t, <<1,1,1>>)       #-> [{<<1, 1, 1, 0::size(1)>>, "1.1.1.0/25"}, {<<1, 1, 1>>, "1.1.1.0/24"}]
 
+# turn the tree into a list
+to_list(t)              #-> [{<<1, 1, 1, 0::size(1)>>, "1.1.1.0/25"}, {<<1, 1, 1>>, "1.1.1.0/24"}]
+
+# traverse the tree and apply a function to each node, where a node can be:
+# 1) an internal node, 2) nil or 3) a leaf
+fun = fn
+  (acc, {_bit, _left, _right}) -> acc
+  (acc, nil) -> acc
+  (acc, leaf) -> Enum.map(leaf, fn {_k, v} -> v end) ++ acc
+end
+
+traverse(t, fun, [], :inorder)     #-> ["1.1.1.0/25", "1.1.1.0/24"]
+
+# or just run a function on all {k,v}-pairs in the tree
+fun = fn {_k, v}, acc -> [v | acc] end
+
+exec(t, fun, []) |> Enum.reverse() #-> ["1.1.1.0/25", "1.1.1.0/24"]
 ```
 
 

@@ -11,6 +11,7 @@ defmodule Radix.MixProject do
       elixir: "~> 1.11",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      name: "Radix",
       docs: docs()
     ]
   end
@@ -32,8 +33,8 @@ defmodule Radix.MixProject do
 
   defp docs do
     [
-      extras: ["CHANGELOG.md", "README.md"],
-      main: "readme",
+      main: Radix,
+      extras: ["README.md", "CHANGELOG.md"],
       source_url: @source_url
     ]
   end

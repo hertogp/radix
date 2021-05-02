@@ -429,15 +429,18 @@ defmodule Radix do
 
   """
   @spec apm(tree | leaf, key) :: list(keyval)
-  def apm({b, l, r}, key) do
+  def apm({b, l, r} = _tree, key) do
     case bit(key, b) do
       0 -> apm(l, key)
       1 -> apm(r, key) ++ apm(l, key)
     end
   end
 
-  def apm(nil, _), do: []
-  def apm(leaf, key), do: Enum.filter(leaf, fn {k, _} -> is_prefix?(k, key) end)
+  def apm(nil, _),
+    do: []
+
+  def apm(leaf, key),
+    do: Enum.filter(leaf, fn {k, _} -> is_prefix?(k, key) end)
 
   @doc """
   Get all `{k,v}`-pairs where *key* is a prefix of `k`.
