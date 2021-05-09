@@ -1,6 +1,7 @@
 defmodule Radix do
   @moduledoc """
-  A path-compressed Patricia trie, with one-way branching removed.
+  A path-compressed Patricia trie, with one-way branching removed and
+  bitstrings for keys.
 
   The radix tree (with r=2)  has 2 types of nodes:
   - *internal* `{bit, left, right}`, where `bit` >= 0
@@ -216,9 +217,9 @@ defmodule Radix do
     do: Enum.reduce(elements, @empty, fn {k, v}, t -> put(t, k, v) end)
 
   @doc """
-  Get the {k, v}-pair where `k` is equal to *key*.
+  Get the key,value-pair whose key equals the given search `key`.
 
-  If *key* is not present in the radix tree, `default` is returned.
+  If `key` is not present in the radix tree, `default` is returned.
 
 
   ## Example
@@ -247,7 +248,9 @@ defmodule Radix do
   end
 
   @doc """
-  Store `{key, value}`-pairs in the radix tree, overwrites existing keys.
+  Stores {`key`, `value`}-pairs in the radix `tree`.
+
+  Any existing `key`'s will have their `value`'s replaced.
 
   ## Examples
 
@@ -266,7 +269,7 @@ defmodule Radix do
 
   @spec put(tree, key, value) :: tree
   @doc """
-  Store a `value` under `key` in the radix tree.
+  Store a {`key`,`value`}-pair in the radix `tree`.
 
   Any existing `key` will have its `value` replaced.
 
@@ -393,7 +396,7 @@ defmodule Radix do
   @doc """
   Drops the given `keys` from the radix `tree` using an exact match.
 
-  Any `key`s that don't exist in the `tree`, are ignored.
+  Any `key`'s that don't exist in the `tree`, are ignored.
 
   ## Example
 
@@ -421,7 +424,7 @@ defmodule Radix do
   # - however, if the right won't match, the left might still match
 
   @doc """
-  Get the `{k,v}`-pair where `k` is the longest possible prefix of *key*.
+  Get the key,value-pair whose key is the longest prefix of `key`.
 
   ## Example
 
@@ -506,7 +509,7 @@ defmodule Radix do
       []
 
   """
-  @spec search(tree, key, atom) :: [{key, value}] | []
+  @spec search(tree, key, atom) :: [{key, value}]
   def search(tree, key, type \\ :more)
 
   def search({0, _, _} = tree, key, :more) when is_bitstring(key),
@@ -580,14 +583,14 @@ defmodule Radix do
   defp to_list(leaf, acc), do: acc ++ leaf
 
   @doc """
-  Invokes *fun* for each key,value-pair in the radix tree with the accumulator.
+  Invokes `fun` for each key,value-pair in the radix tree with the accumulator.
 
   The initial value of the accumulator is `acc`. The function is invoked for
   each key,value-pair in the radix tree with the accumulator in a depth-first
   fashion. The result returned by the function is used as the accumulator for
   the next iteration.  The function returns the last accumulator.
 
-  *fun*'s signature is (`t:key/0`, `t:value/0`, `t:acc/0`) -> `t:acc/0`.
+  `fun`'s signature is (`t:key/0`, `t:value/0`, `t:acc/0`) -> `t:acc/0`.
 
   ## Example
 
@@ -615,6 +618,52 @@ defmodule Radix do
   def reducep([], _f, acc), do: acc
   def reducep({_, l, r}, fun, acc), do: reducep(r, fun, reducep(l, fun, acc))
   def reducep([{k, v} | tail], fun, acc), do: reducep(tail, fun, fun.(k, v, acc))
+
+  @doc """
+  Returns all keys from the radix `tree`.
+
+  # Example
+
+      iex> t = new([
+      ...>  {<<1, 1, 1, 0::1>>, "1.1.1.0/25"},
+      ...>  {<<1, 1, 1, 1::1>>, "1.1.1.128/25"},
+      ...>  {<<1, 1, 1>>, "1.1.1.0/24"},
+      ...>  {<<3>>, "3.0.0.0/8"},
+      ...>  ])
+      iex>
+      iex> keys(t)
+      [<<1, 1, 1, 0::1>>, <<1, 1, 1>>, <<1, 1, 1, 1::1>>, <<3>>]
+  """
+  @spec keys(tree) :: [key]
+  def keys({0, _, _} = tree) do
+    tree
+    |> reduce(fn k, _v, acc -> [k | acc] end, [])
+    |> Enum.reverse()
+  end
+
+  @doc """
+  Returns all values from the radix `tree`.
+
+  # Example
+
+      iex> t = new([
+      ...>  {<<1, 1, 1, 0::1>>, "1.1.1.0/25"},
+      ...>  {<<1, 1, 1, 1::1>>, "1.1.1.128/25"},
+      ...>  {<<1, 1, 1>>, "1.1.1.0/24"},
+      ...>  {<<3>>, "3.0.0.0/8"},
+      ...>  ])
+      iex>
+      iex> # get values
+      iex>
+      iex> values(t)
+      ["1.1.1.0/25", "1.1.1.0/24", "1.1.1.128/25", "3.0.0.0/8"]
+  """
+  @spec values(tree) :: [value]
+  def values({0, _, _} = tree) do
+    tree
+    |> reduce(fn _k, v, acc -> [v | acc] end, [])
+    |> Enum.reverse()
+  end
 
   @doc """
   Invokes *fun* on all (internal and leaf) nodes of the radix tree using either
