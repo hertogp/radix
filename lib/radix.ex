@@ -504,10 +504,10 @@ defmodule Radix do
   Lookup given search `key` in `tree` and update the value of matched key with
   the given function.
 
-  If `key` is present in `map` then the existing value is passed to `fun` and
-  its result is used as the updated value of `key`. If `key` is not present in
-  `map`, `default` is inserted as the value of `key`. The default value will
-  not be passed through the update function.
+  If `key` has a longest prefix match in `tree` then its value is passed to
+  `fun` and its result is used as the updated value of the *matching* key. If
+  `key` cannot be matched the {`default`, `key`}-pair is inserted in
+  the `tree`.
 
   ## Examples
 
