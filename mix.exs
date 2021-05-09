@@ -2,25 +2,32 @@ defmodule Radix.MixProject do
   use Mix.Project
 
   @version "0.1.0"
-  @source_url "https://github.com/hertogp/radix"
+  @url "https://github.com/hertogp/radix"
 
   def project do
     [
       app: :radix,
       version: @version,
       elixir: "~> 1.11",
-      start_permanent: Mix.env() == :prod,
-      deps: deps(),
       name: "Radix",
-      docs: docs()
+      description: "A path-compressed Patricia trie with one-way branching removed",
+      deps: deps(),
+      docs: docs(),
+      package: package()
     ]
   end
 
   # Run "mix help compile.app" to learn about applications.
   def application do
-    [
-      extra_applications: []
-    ]
+    []
+  end
+
+  defp package do
+    %{
+      licenses: ["MIT"],
+      maintainers: ["hertogp"],
+      links: %{"GitHub" => @url}
+    }
   end
 
   # Run "mix help deps" to learn about dependencies.
@@ -35,7 +42,7 @@ defmodule Radix.MixProject do
     [
       main: Radix,
       extras: ["README.md", "CHANGELOG.md"],
-      source_url: @source_url
+      source_url: @url
     ]
   end
 end

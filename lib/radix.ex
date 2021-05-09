@@ -1,8 +1,8 @@
 defmodule Radix do
   @moduledoc """
-  A path-compressed Patricia trie with one-way branching removed.
+  A path-compressed Patricia trie, with one-way branching removed.
 
-  The radix tree (whose r is 2)  has 2 types of nodes:
+  The radix tree (with r=2)  has 2 types of nodes:
   - *internal* `{bit, left, right}`, where `bit` >= 0
   - *leaf*     `[{key,value} ..]`
 
@@ -13,41 +13,41 @@ defmodule Radix do
   - `key` is a bitstring
   - `value` can be anything
 
-  The keys stored below any given `internal` node or in a `leaf` node, all
-  agree on the bits checked to arrive at that particular node.
-  Path-compression means not all bits in a key are checked while traversing
-  the tree, only those that differentiate between keys stored below the current
-  `internal` node.  So a final match is needed to ensure a correct match.
+  An `internal` node speficies a `bit` position to check in the search key to
+  decide whether the traversal proceeds with its `left` or `right` subtree.
 
   A `leaf` stores key,value-pairs in a list sorted in descending order of
   key-length and all keys in a leaf have the other, shorter keys as their
   prefix.
 
-  Normally, the keys are bitstrings created from ip prefixes but any bitstring,
-  including binaries, can be used as keys.
+  The keys stored below any given `internal` node or in a `leaf` node, all
+  agree on the bits checked to arrive at that particular node.
+  Path-compression means not all bits in a key are checked while traversing the
+  tree, only those that differentiate between keys stored below the current
+  `internal` node.  So a final match is needed to ensure a correct match.
 
   ## Examples
 
       iex> t = new()
-      ...>     |> set(<<1, 1, 1>>, "1.1.1.0/24")
-      ...>     |> set(<<1, 1, 1, 0::6>>, "1.1.1.0/30")
+      ...>     |> put(<<1, 1, 1>>, "1.1.1.0/24")
+      ...>     |> put(<<1, 1, 1, 0::6>>, "1.1.1.0/30")
       iex>
-      iex> lpm(t, <<1, 1, 1, 255>>)
+      iex> lookup(t, <<1, 1, 1, 255>>)
       {<<1, 1, 1>>, "1.1.1.0/24"}
       #
-      iex> lpm(t, <<1, 1, 1, 3>>)
+      iex> lookup(t, <<1, 1, 1, 3>>)
       {<<1, 1, 1, 0::6>>, "1.1.1.0/30"}
 
   Regular binaries work too:
 
       iex> t = new([{"A.new", "new"}, {"A.newer", "newer"}, {"B.newest", "newest"}])
-      iex> rpm(t, "A.") |> Enum.reverse()
+      iex> search(t, "A.") |> Enum.reverse()
       [{"A.new", "new"}, {"A.newer", "newer"}]
       #
-      iex> lpm(t, "A.newest")
+      iex> lookup(t, "A.newest")
       {"A.new", "new"}
       #
-      iex> rpm(t, "C.")
+      iex> search(t, "C.")
       []
 
   """
@@ -57,38 +57,26 @@ defmodule Radix do
   """
   @type acc :: any()
 
-  @typedoc """
-  The maximum depth to travel the `t:tree/0` before inserting a new key.
-  """
-  @type bitpos :: non_neg_integer()
+  # maximum depth to travel the `t:tree/0` before inserting a new key.
+  @typep bitpos :: non_neg_integer()
 
   @typedoc """
   Any value to be stored in the radix tree.
-
   """
   @type value :: any()
 
   @typedoc """
-  A key to index into the radix tree.
-
+  A bitstring used as a key to index into the radix tree.
   """
   @type key :: bitstring()
 
   @typedoc """
-  Key,value-pair as stored in the tree.
-
-  """
-  @type keyval :: {key(), value()}
-
-  @typedoc """
   A radix leaf node.
-
   """
-  @type leaf :: list(keyval) | nil
+  @type leaf :: [{key, value}] | nil
 
   @typedoc """
   A radix tree node.
-
   """
   @type tree :: {non_neg_integer, tree | leaf, tree | leaf}
 
@@ -122,8 +110,11 @@ defmodule Radix do
     end
   end
 
-  defp leaf(leaf, _key),
+  defp leaf([{_k, _v} | _tail] = leaf, _key),
     do: leaf
+
+  defp leaf(_, _key),
+    do: nil
 
   # action to take given a new, candidate key and a leaf
   #  :take   if the leaf is nil and thus free
@@ -144,7 +135,7 @@ defmodule Radix do
     end
   end
 
-  # Say whether `k` is a prefix of `key`
+  # say whether `k` is a prefix of `key`
   @spec is_prefix?(key, key) :: boolean
   defp is_prefix?(k, key) when bit_size(k) > bit_size(key),
     do: false
@@ -153,50 +144,6 @@ defmodule Radix do
     len = bit_size(k)
     <<key::bitstring-size(len), _::bitstring>> = key
     k == key
-  end
-
-  # Tree modifications
-
-  # put
-  # - inserts/updates a {key,value}-pair into the tree
-  # - pos is maximum depth to travel down the tree before splitting
-
-  # max depth exceeded, so split the tree here
-  @spec put(tree | leaf, bitpos, key, value) :: tree | leaf
-  defp put({bit, _l, _r} = node, pos, key, val) when pos < bit do
-    case bit(key, pos) do
-      0 -> {pos, [{key, val}], node}
-      1 -> {pos, node, [{key, val}]}
-    end
-  end
-
-  # insert somewhere in the left/right subtree
-  defp put({bit, l, r}, pos, key, val) do
-    case bit(key, bit) do
-      0 -> {bit, put(l, pos, key, val), r}
-      1 -> {bit, l, put(r, pos, key, val)}
-    end
-  end
-
-  # ran into a leaf
-  defp put(leaf, pos, key, val) do
-    case action(leaf, key) do
-      :take ->
-        [{key, val}]
-
-      :split ->
-        # split tree, new key decides if it goes left or right
-        case bit(key, pos) do
-          0 -> {pos, [{key, val}], leaf}
-          1 -> {pos, leaf, [{key, val}]}
-        end
-
-      :add ->
-        [{key, val} | leaf] |> List.keysort(0) |> Enum.reverse()
-
-      :update ->
-        List.keyreplace(leaf, key, 0, {key, val})
-    end
   end
 
   # differ
@@ -226,12 +173,58 @@ defmodule Radix do
 
   # get key's position (bitpos) in the tree
   @spec position(tree, key) :: bitpos
+  defp position(_tree, key) when bit_size(key) == 0,
+    do: 0
+
   defp position(tree, key) do
     case leaf(tree, key) do
       nil -> bit_size(key) - 1
       leaf -> differ(leaf, key)
     end
   end
+
+  # get a {k,v}-pair from a leaf
+  @spec getp(leaf, key, any) :: {key, value} | any
+  defp getp(nil, _, default), do: default
+
+  defp getp(leaf, key, default) do
+    case List.keyfind(leaf, key, 0) do
+      nil -> default
+      keyval -> keyval
+    end
+  end
+
+  # delete a {k,v}-pair from the tree
+  # @spec delp(tree | leaf, list(key) | key) :: tree
+  # defp delp(tree, keys) when is_list(keys),
+  #   do: Enum.reduce(keys, tree, fn k, t -> delp(t, k) end)
+
+  @spec delp(tree | leaf, key) :: tree | leaf
+  defp delp({bit, l, r}, key) do
+    case bit(key, bit) do
+      0 -> delp({bit, delp(l, key), r})
+      1 -> delp({bit, l, delp(r, key)})
+    end
+  end
+
+  # key wasn't in the tree
+  defp delp(nil, _key),
+    do: nil
+
+  # key leads to leaf
+  defp delp(leaf, key) do
+    case List.keydelete(leaf, key, 0) do
+      [] -> nil
+      leaf -> leaf
+    end
+  end
+
+  # always keep the root, eliminate empty nodes and promote half-empty nodes
+  defp delp({0, l, r}), do: {0, l, r}
+  defp delp({_, nil, nil}), do: nil
+  defp delp({_, l, nil}), do: l
+  defp delp({_, nil, r}), do: r
+  defp delp({bit, l, r}), do: {bit, l, r}
 
   # API
 
@@ -249,7 +242,7 @@ defmodule Radix do
     do: @empty
 
   @doc """
-  Return a new radix tree, initialized using given list of `{k, v}`-pairs.
+  Return a new radix tree, initialized using given list of `{key, value}`-pairs.
 
   ## Example
 
@@ -261,13 +254,15 @@ defmodule Radix do
         nil
       }
   """
-  @spec new(list(keyval)) :: tree
-  def new(elements) when is_list(elements) do
-    Enum.reduce(elements, @empty, fn {k, v}, t -> set(t, k, v) end)
-  end
+  @spec new([{key, value}]) :: tree
+  def new([{key, _} | _tail] = elements) when is_bitstring(key),
+    do: Enum.reduce(elements, @empty, fn {k, v}, t -> put(t, k, v) end)
 
   @doc """
   Get the {k, v}-pair where `k` is equal to *key*.
+
+  If *key* is not present in the radix tree, `default` is returned.
+
 
   ## Example
 
@@ -279,42 +274,24 @@ defmodule Radix do
       {<<1, 1>>, 16}
       iex> get(ipt, <<1, 1, 0::1>>)
       nil
+      iex> get(ipt, <<1, 1, 0::1>>, "oops")
+      "oops"
 
   """
-  @spec get(tree, key) :: keyval | nil
-  def get(tree, key) do
-    case leaf(tree, key) do
-      nil -> nil
-      leaf -> List.keyfind(leaf, key, 0)
-    end
+  @spec get(tree, key, any) :: {key, value} | any
+  def get({0, _, _} = tree, key, default \\ nil) when is_bitstring(key) do
+    tree
+    |> leaf(key)
+    |> getp(key, default)
   end
 
   @doc """
-  Store `{k, v}`-pairs in the radix tree, any existing `k`'s will have their `v` replaced.
+  Store `{key, value}`-pairs in the radix tree, overwrites existing keys.
 
-  ## Example
+  ## Examples
 
-      iex> elements = [{<<1, 1>>, "1.1.0.0/16"}, {<<1, 1, 1, 1>>, "x/y"}]
-      iex> new() |> set(elements)
-      {0,
-        {23, [{<<1, 1>>, "1.1.0.0/16"}],
-             [{<<1, 1, 1, 1>>, "x/y"}]},
-        nil
-      }
-
-  """
-  @spec set(tree, list(keyval)) :: tree
-  def set(tree, elements) when is_list(elements) do
-    Enum.reduce(elements, tree, fn {k, v}, t -> set(t, k, v) end)
-  end
-
-  @doc """
-  Store a `{k, v}`-pair in the radix tree, an existing `k` will have its `v` replaced.
-
-  ## Example
-
-      iex> elements = [{<<1, 1>>, "1.1.0.0/16"}, {<<1, 1, 1, 1>>, "x.x.x.x"}]
-      iex> new(elements) |> set(<<1, 1, 1, 1>>, "1.1.1.1")
+      iex> elements = [{<<1, 1>>, "1.1.0.0/16"}, {<<1, 1, 1, 1>>, "1.1.1.1"}]
+      iex> new() |> put(elements)
       {0,
         {23, [{<<1, 1>>, "1.1.0.0/16"}],
              [{<<1, 1, 1, 1>>, "1.1.1.1"}]},
@@ -322,12 +299,86 @@ defmodule Radix do
       }
 
   """
-  @spec set(tree, key, value) :: tree
-  def set(tree, key, value),
+  @spec put(tree, [{key, value}]) :: tree
+  def put({0, _, _} = tree, [{k, _} | _tail] = elements) when is_bitstring(k),
+    do: Enum.reduce(elements, tree, fn {k, v}, t -> put(t, k, v) end)
+
+  @spec put(tree, key, value) :: tree
+  @doc """
+  Store a `value` under `key` in the radix tree.
+
+  Any existing `key` will have its `value` replaced.
+
+  ## Examples
+
+      iex> t = new()
+      ...>  |> put(<<1, 1>>, "1.1.0.0/16")
+      ...>  |> put(<<1, 1, 1, 1>>, "x.x.x.x")
+      iex> t
+      {0,
+        {23, [{<<1, 1>>, "1.1.0.0/16"}],
+             [{<<1, 1, 1, 1>>, "x.x.x.x"}]},
+        nil
+      }
+      #
+      iex> put(t, <<1, 1, 1, 1>>, "1.1.1.1")
+      {0,
+        {23, [{<<1, 1>>, "1.1.0.0/16"}],
+             [{<<1, 1, 1, 1>>, "1.1.1.1"}]},
+        nil
+      }
+
+
+  """
+  def put({0, _, _} = tree, key, value) when is_bitstring(key),
     do: put(tree, position(tree, key), key, value)
 
+  # putp
+  # - putps/updates a {key,value}-pair into the tree
+  # - pos is maximum depth to travel down the tree before splitting
+
+  # max depth exceeded, so split the tree here
+  @spec put(tree | leaf, bitpos, key, value) :: tree | leaf
+  defp put({bit, _left, _right} = node, pos, key, val) when pos < bit do
+    case bit(key, pos) do
+      0 -> {pos, [{key, val}], node}
+      1 -> {pos, node, [{key, val}]}
+    end
+  end
+
+  # putp somewhere in the left/right subtree
+  defp put({bit, l, r}, pos, key, val) do
+    case bit(key, bit) do
+      0 -> {bit, put(l, pos, key, val), r}
+      1 -> {bit, l, put(r, pos, key, val)}
+    end
+  end
+
+  # ran into a leaf
+  defp put(leaf, pos, key, val) do
+    case action(leaf, key) do
+      :take ->
+        [{key, val}]
+
+      :split ->
+        # split tree, new key decides if it goes left or right
+        case bit(key, pos) do
+          0 -> {pos, [{key, val}], leaf}
+          1 -> {pos, leaf, [{key, val}]}
+        end
+
+      :add ->
+        [{key, val} | leaf] |> List.keysort(0) |> Enum.reverse()
+
+      :update ->
+        List.keyreplace(leaf, key, 0, {key, val})
+    end
+  end
+
   @doc """
-  Delete the `{k, v}`-pair where `k` is equal to *key*.
+  Delete the entry from the `tree` for a specific `key` using an exact match.
+
+  If `key` does not exist, the `tree` is returned unchanged.
 
   ## Example
 
@@ -339,49 +390,47 @@ defmodule Radix do
            },
         nil}
       #
-      iex> del(t, <<1, 1, 0>>)
+      iex> delete(t, <<1, 1, 0>>)
       {0, {23, [{<<1, 1>>, 16}],
                [{<<1, 1, 1, 1>>, 32}]
            },
         nil}
 
   """
-  @spec del(tree | leaf, list(key) | key) :: tree
-  def del(tree, keys) when is_list(keys),
-    do: Enum.reduce(keys, tree, fn k, t -> del(t, k) end)
+  @spec delete(tree, key) :: tree
+  def delete({0, _, _} = tree, key) when is_bitstring(key),
+    do: delp(tree, key)
 
-  def del({bit, l, r}, key) do
-    case bit(key, bit) do
-      0 -> del({bit, del(l, key), r})
-      1 -> del({bit, l, del(r, key)})
-    end
-  end
+  @doc """
+  Drops the given `keys` from the radix `tree` using an exact match.
 
-  # key wasn't in the tree
-  def del(nil, _key),
-    do: nil
+  Any `key`s that don't exist in the `tree`, are ignored.
 
-  # key leads to leaf
-  def del(leaf, key) do
-    case List.keydelete(leaf, key, 0) do
-      [] -> nil
-      leaf -> leaf
-    end
-  end
+  ## Example
 
-  # always keep the root, eliminate empty nodes and promote half-empty nodes
-  defp del({0, l, r}), do: {0, l, r}
-  defp del({_, nil, nil}), do: nil
-  defp del({_, l, nil}), do: l
-  defp del({_, nil, r}), do: r
-  defp del({bit, l, r}), do: {bit, l, r}
+      iex> elms = [{<<1, 1>>, 16}, {<<1, 1, 0>>, 24}, {<<1, 1, 1, 1>>, 32}]
+      iex> t = new(elms)
+      iex> t
+      {0, {23, [{<<1, 1, 0>>, 24}, {<<1, 1>>, 16}],
+               [{<<1, 1, 1, 1>>, 32}]
+           },
+        nil}
+      #
+      iex> drop(t, [<<1, 1>>, <<1, 1, 1, 1>>])
+      {0, [{<<1, 1, 0>>, 24}], nil}
+
+  """
+  @spec drop(tree, [key]) :: tree
+  def drop({0, _, _} = tree, [k | _] = keys) when is_bitstring(k),
+    do: Enum.reduce(keys, tree, fn key, tree -> delp(tree, key) end)
 
   # get the longest prefix match for binary key
   # - follow tree path using key and get longest match from the leaf found
   # - more specific is to the right, less specific is to the left.
-  # So:
+  # so:
   # - when left won't provide a match, the right never will either
   # - however, if the right won't match, the left might still match
+
   @doc """
   Get the `{k,v}`-pair where `k` is the longest possible prefix of *key*.
 
@@ -389,16 +438,25 @@ defmodule Radix do
 
       iex> elms = [{<<1, 1>>, 16}, {<<1, 1, 0>>, 24}, {<<1, 1, 0, 0::1>>, 25}]
       iex> t = new(elms)
-      iex> lpm(t, <<1, 1, 0, 127>>)
+      iex> lookup(t, <<1, 1, 0, 127>>)
       {<<1, 1, 0, 0::1>>, 25}
-      iex> lpm(t, <<1, 1, 0, 128>>)
+      #
+      iex> lookup(t, <<1, 1, 0, 128>>)
       {<<1, 1, 0>>, 24}
-      iex> lpm(t, <<1, 1, 1, 1>>)
+      #
+      iex> lookup(t, <<1, 1, 1, 1>>)
       {<<1, 1>>, 16}
+      #
+      iex> lookup(t, <<2, 2, 2, 2>>)
+      nil
 
   """
-  @spec lpm(tree | leaf, key) :: keyval | nil
-  def lpm({b, l, r} = _tree, key) do
+  @spec lookup(tree, key) :: {key, value} | nil
+  def lookup({0, _, _} = tree, key) when is_bitstring(key),
+    do: lpm(tree, key)
+
+  @spec lpm(tree | leaf, key) :: {key, value} | nil
+  defp lpm({b, l, r} = _tree, key) do
     case bit(key, b) do
       0 ->
         lpm(l, key)
@@ -411,44 +469,22 @@ defmodule Radix do
     end
   end
 
-  def lpm(nil, _key),
+  defp lpm(nil, _key),
     do: nil
 
-  def lpm(leaf, key),
+  defp lpm(leaf, key),
     do: Enum.find(leaf, fn {k, _} -> is_prefix?(k, key) end)
 
   @doc """
-  Get all `{k,v}`-pairs where `k` is a prefix of *key*.
+  Returns all key-value-pair(s) based on given search `key` and match `type`.
 
-  ## Example
+  - `:more` finds all key,value-pairs where search `key` is a prefix of key in tree
+  - `:less` finds all key,value-pairs where key in tree is a prefix of the search `key`.
 
-      iex> elms = [{<<1, 1>>, 16}, {<<1, 1, 0>>, 24}, {<<1, 1, 0, 0>>, 32}, {<<1, 1, 1, 1>>, 32}]
-      iex> t = new(elms)
-      iex> apm(t, <<1, 1, 1, 1>>)
-      [{<<1, 1, 1, 1>>, 32}, {<<1, 1>>, 16}]
-      iex>
-      iex> apm(t, <<1, 1, 0>>)
-      [{<<1, 1, 0>>, 24}, {<<1, 1>>, 16}]
+  The search type defaults to `:more` finding all key,value-pairs whose key matches the
+  search `key`.  Includes search `key` in the results if present in the radix tree.
 
-  """
-  @spec apm(tree | leaf, key) :: list(keyval)
-  def apm({b, l, r} = _tree, key) do
-    case bit(key, b) do
-      0 -> apm(l, key)
-      1 -> apm(r, key) ++ apm(l, key)
-    end
-  end
-
-  def apm(nil, _),
-    do: []
-
-  def apm(leaf, key),
-    do: Enum.filter(leaf, fn {k, _} -> is_prefix?(k, key) end)
-
-  @doc """
-  Get all `{k,v}`-pairs where *key* is a prefix of `k`.
-
-  ## Example
+  ## Examples
 
       iex> elements = [
       ...>  {<<1, 1>>, 16},
@@ -457,21 +493,59 @@ defmodule Radix do
       ...>  {<<1, 1, 1, 1>>, 32}
       ...> ]
       iex> t = new(elements)
-      iex> rpm(t, <<1, 1, 0>>)
+      iex> search(t, <<1, 1, 0>>)
       [{<<1, 1, 0, 0>>, 32}, {<<1, 1, 0>>, 24}]
       #
-      iex> rpm(t, <<1, 1, 1>>)
+      iex> search(t, <<1, 1, 1>>)
       [{<<1, 1, 1, 1>>, 32}]
       #
-      iex> rpm(t, <<2>>)
+      iex> search(t, <<2>>)
       []
+
+      iex> t = new()
+      ...>   |> put(<<1, 1>>, 16)
+      ...>   |> put(<<1, 1, 0>>, 24)
+      ...>   |> put(<<1, 1, 0, 0>>, 32)
+      ...>   |> put(<<1, 1, 1, 1>>, 32)
+      iex> search(t, <<1, 1, 1, 1>>, :less)
+      [{<<1, 1, 1, 1>>, 32}, {<<1, 1>>, 16}]
+      #
+      iex> search(t, <<1, 1, 0>>, :less)
+      [{<<1, 1, 0>>, 24}, {<<1, 1>>, 16}]
+      #
+      iex> search(t, <<2, 2>>, :less)
+      []
+
   """
-  @spec rpm(tree | leaf, key) :: list(keyval)
-  def rpm({b, l, r} = _tree, key) when bit_size(key) < b do
+  @spec search(tree, key, atom) :: [{key, value}] | []
+  def search(tree, key, type \\ :more)
+
+  def search({0, _, _} = tree, key, :more) when is_bitstring(key),
+    do: rpm(tree, key)
+
+  def search({0, _, _} = tree, key, :less) when is_bitstring(key),
+    do: apm(tree, key)
+
+  @spec apm(tree | leaf, key) :: [{key, value}]
+  defp apm({b, l, r} = _tree, key) do
+    case bit(key, b) do
+      0 -> apm(l, key)
+      1 -> apm(r, key) ++ apm(l, key)
+    end
+  end
+
+  defp apm(nil, _),
+    do: []
+
+  defp apm(leaf, key),
+    do: Enum.filter(leaf, fn {k, _} -> is_prefix?(k, key) end)
+
+  @spec rpm(tree | leaf, key) :: [{key, value}]
+  defp rpm({b, l, r} = _tree, key) when bit_size(key) < b do
     rpm(r, key) ++ rpm(l, key)
   end
 
-  def rpm({b, l, r}, key) do
+  defp rpm({b, l, r}, key) do
     # when bit b is zero, right subtree might hold longer keys that have key as a prefix
     # TODO: optimize; only call rpm(r,key) when bitpos b > bit_size(key)
     case bit(key, b) do
@@ -480,16 +554,14 @@ defmodule Radix do
     end
   end
 
-  def rpm(nil, _),
+  defp rpm(nil, _),
     do: []
 
-  def rpm(leaf, key),
+  defp rpm(leaf, key),
     do: Enum.filter(leaf, fn {k, _} -> is_prefix?(key, k) end)
 
-  # TRAVERSALs
-
   @doc """
-  Return all `{k,v}`-pairs as a flat list, using in-order traversal.
+  Return all key,value-pairs as a flat list, using in-order traversal.
 
   ## Example
 
@@ -509,7 +581,7 @@ defmodule Radix do
 
 
   """
-  @spec to_list(tree) :: list(keyval)
+  @spec to_list(tree) :: [{key, value}]
   def to_list(tree), do: to_list(tree, [])
 
   defp to_list(nil, acc), do: acc
@@ -517,9 +589,9 @@ defmodule Radix do
   defp to_list(leaf, acc), do: acc ++ leaf
 
   @doc """
-  Executes *fun* on all `{k,v}`-pairs in the radix tree in a depth-first fashion.
+  Executes *fun* on all key,value-pairs in the radix tree in a depth-first fashion.
 
-  *fun*'s signature is (`t:key/0`, `t:value/0`, `t:acc/0`) -> `t:acc/0`, where
+  *fun*'s signature is ({`t:key/0`, `t:value/0`}, `t:acc/0`) -> `t:acc/0`, where
   the caller supplies both *fun* and *acc*.
 
   ## Example
@@ -531,9 +603,10 @@ defmodule Radix do
       ...>  {<<3>>, "3.0.0.0/8"},
       ...>  ])
       iex>
-      iex> f = fn {_key, value}, acc -> acc ++ [value] end
+      iex> # get values
       iex>
-      iex> exec(t, f, [])
+      iex> f = fn {_key, value}, acc -> [value | acc] end
+      iex> exec(t, f, []) |> Enum.reverse()
       ["1.1.1.0/25", "1.1.1.0/24", "1.1.1.128/25", "3.0.0.0/8"]
 
   """
@@ -545,8 +618,8 @@ defmodule Radix do
   def exec([{k, v} | tail], fun, acc), do: exec(tail, fun, fun.({k, v}, acc))
 
   @doc """
-  Execute *fun* on all nodes of the radix tree using either in-order (the
-  default), pre-order or post-order traversal.
+  Execute *fun* on all (internal and leaf) nodes of the radix tree using either
+  `:inorder`, `:preorder` or `:postorder` traversal.
 
   *fun* should have the signatures:
   -  (`t:acc/0`, `t:tree/0`) -> `t:acc/0`
