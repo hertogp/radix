@@ -200,7 +200,7 @@ defmodule Radix do
     do: @empty
 
   @doc """
-  Return a new radix tree, initialized using given list of `{key, value}`-pairs.
+  Return a new radix tree, initialized using given list of {`key`, `value`}-pairs.
 
   ## Example
 
@@ -238,9 +238,6 @@ defmodule Radix do
   """
   @spec get(tree, key, any) :: {key, value} | any
   def get({0, _, _} = tree, key, default \\ nil) when is_bitstring(key) do
-    # tree
-    # |> leaf(key)
-    # |> getp(key, default)
     case leaf(tree, key) do
       nil -> default
       leaf -> List.keyfind(leaf, key, 0, default)
@@ -613,11 +610,11 @@ defmodule Radix do
     do: reducep(tree, fun, acc)
 
   @spec reducep(tree, (key, value, acc -> acc), acc) :: acc
-  def reducep(tree, fun, acc)
-  def reducep(nil, _f, acc), do: acc
-  def reducep([], _f, acc), do: acc
-  def reducep({_, l, r}, fun, acc), do: reducep(r, fun, reducep(l, fun, acc))
-  def reducep([{k, v} | tail], fun, acc), do: reducep(tail, fun, fun.(k, v, acc))
+  defp reducep(tree, fun, acc)
+  defp reducep(nil, _f, acc), do: acc
+  defp reducep([], _f, acc), do: acc
+  defp reducep({_, l, r}, fun, acc), do: reducep(r, fun, reducep(l, fun, acc))
+  defp reducep([{k, v} | tail], fun, acc), do: reducep(tail, fun, fun.(k, v, acc))
 
   @doc """
   Returns all keys from the radix `tree`.
@@ -677,21 +674,16 @@ defmodule Radix do
 
   ## Example
 
-      iex> t = new([
-      ...>  {<<1, 1>>, "1.1"},
-      ...>  {<<1, 1, 0>>, "1.1.0"},
-      ...>  {<<1, 1, 0, 0>>, "1.1.0.0"},
-      ...>  {<<1, 1, 1, 1>>, "1.1.1.1"}
-      ...>  ])
+      iex> t = new([{<<1>>, 1}, {<<2>>, 2}, {<<3>>, 3}, {<<128>>, 128}])
       iex>
       iex> f = fn
       ...>   (acc, {_bit, _left, _right}) -> acc
       ...>   (acc, nil) -> acc
-      ...>   (acc, leaf) -> Enum.map(leaf, fn {_k, v} -> v end) ++ acc
+      ...>   (acc, leaf) -> acc ++ Enum.map(leaf, fn {_k, v} -> v end)
       ...> end
       iex>
       iex> traverse(t, f, [])
-      ["1.1.1.1", "1.1.0.0", "1.1.0", "1.1"]
+      [1, 2, 3, 128]
 
   """
   @spec traverse(tree, (acc, tree | leaf -> acc), acc, atom) :: acc
