@@ -73,7 +73,12 @@ defmodule Radix do
 
   @typedoc """
   A radix leaf node.
+
+  A leaf is either nil or a list of key,value-pairs sorted on key-length in
+  descending order.
+
   """
+
   @type leaf :: [{key, value}] | nil
 
   @typedoc """
@@ -337,6 +342,37 @@ defmodule Radix do
   end
 
   @doc """
+  Updates the `key` in `tree` with the given function.
+
+  If `key` is present in the radix `tree` then the existing value is passed to
+  `fun` and its result is used as the updated value of `key`. If `key` is not
+  present in `tree`, `default` is inserted as the value for `key`. The default
+  value will not be passed through the update function.
+
+  ## Examples
+
+      iex> t = new()
+      iex> t = update(t, <<1>>, 1, fn x -> x+1 end)
+      iex> t
+      {0, [{<<1>>, 1}], nil}
+      iex> t = update(t, <<1>>, 1, fn x -> x+1 end)
+      iex> t
+      {0, [{<<1>>, 2}], nil}
+      iex> t = update(t, <<1, 1>>, 1, fn x -> x+1 end)
+      iex> t
+      {0, {15, [{<<1>>, 2}], [{<<1, 1>>, 1}]}, nil}
+
+  """
+  @spec update(tree, key, value, (value -> value)) :: tree
+  def update({0, _, _} = tree, key, default, fun)
+      when is_bitstring(key) and is_function(fun, 1) do
+    case get(tree, key) do
+      nil -> put(tree, key, default)
+      {_key, value} -> put(tree, key, fun.(value))
+    end
+  end
+
+  @doc """
   Delete the entry from the `tree` for a specific `key` using an exact match.
 
   If `key` does not exist, the `tree` is returned unchanged.
@@ -463,6 +499,40 @@ defmodule Radix do
 
   defp lpm(leaf, key),
     do: Enum.find(leaf, fn {k, _} -> is_prefix?(k, key) end)
+
+  @doc """
+  Lookup given search `key` in `tree` and update the value of matched key with
+  the given function.
+
+  If `key` is present in `map` then the existing value is passed to `fun` and
+  its result is used as the updated value of `key`. If `key` is not present in
+  `map`, `default` is inserted as the value of `key`. The default value will
+  not be passed through the update function.
+
+  ## Examples
+
+      iex> t = new()
+      iex> t = lookup_update(t, <<1, 1, 1>>, 1, fn x -> x+1 end)
+      iex> t
+      {0, [{<<1, 1, 1>>, 1}], nil}
+      iex> t = lookup_update(t, <<1, 1, 1>>, 1, fn x -> x+1 end)
+      iex> t
+      {0, [{<<1, 1, 1>>, 2}], nil}
+      iex> t = lookup_update(t, <<1, 1, 1, 1>>, 1, fn x -> x+1 end)
+      iex> t
+      {0, [{<<1, 1, 1>>, 3}], nil}
+
+
+
+  """
+  @spec lookup_update(tree, key, value, (value -> value)) :: tree
+  def lookup_update({0, _, _} = tree, key, default \\ nil, fun)
+      when is_bitstring(key) and is_function(fun, 1) do
+    case lookup(tree, key) do
+      nil -> put(tree, key, default)
+      {k, value} -> put(tree, k, fun.(value))
+    end
+  end
 
   @doc """
   Returns all key-value-pair(s) based on given search `key` and match `type`.
@@ -663,14 +733,14 @@ defmodule Radix do
   end
 
   @doc """
-  Invokes *fun* on all (internal and leaf) nodes of the radix tree using either
+  Invokes `fun` on all (internal and leaf) nodes of the radix `tree` using either
   `:inorder`, `:preorder` or `:postorder` traversal.
 
-  *fun* should have the signatures:
+  `fun` should have the signatures:
   -  (`t:acc/0`, `t:tree/0`) -> `t:acc/0`
   -  (`t:acc/0`, `t:leaf/0`) -> `t:acc/0`
 
-  Note that *leaf* might be nil.
+  Note that `t:leaf/0` might be nil.
 
   ## Example
 
