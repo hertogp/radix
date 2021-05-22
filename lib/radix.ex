@@ -124,6 +124,54 @@ defmodule Radix do
   defp leaf(leaf, _key, _max),
     do: leaf
 
+  # given a key, traverse the tree and return the leaf and its position
+  def leaf_pos(tree, key),
+    do: leaf_pos(tree, key, bit_size(key), 0)
+
+  def leaf_pos({b, l, r}, key, max, _pos) when b < max do
+    <<_::size(b), bit::1, _::bitstring>> = key
+
+    case(bit) do
+      0 -> leaf_pos(l, key, max, b)
+      1 -> leaf_pos(r, key, max, b)
+    end
+  end
+
+  def leaf_pos({b, l, _}, key, max, _pos),
+    do: leaf_pos(l, key, max, b)
+
+  def leaf_pos(leaf, _key, _max, pos),
+    do: {pos, leaf}
+
+  @spec leaf_match(leaf, key, non_neg_integer) :: {key, value} | nil
+  defp leaf_match([], _key, _kmax), do: nil
+
+  defp leaf_match([{k, _v} | tail], key, kmax) when bit_size(k) > kmax,
+    do: leaf_match(tail, key, kmax)
+
+  defp leaf_match([{k, v} | tail], key, kmax) do
+    len = bit_size(k)
+    <<key::bitstring-size(len), _::bitstring>> = key
+
+    case k == key do
+      true -> {k, v}
+      false -> leaf_match(tail, key, kmax)
+    end
+  end
+
+  @spec leaf_key(leaf, key, non_neg_integer) :: {key, value} | false
+  defp leaf_key([{k, v} | _tail], key, _kmax) when k == key,
+    do: {k, v}
+
+  # shorter keys will never equal search `key`
+  defp leaf_key([{k, _v} | _tail], _key, kmax) when bit_size(k) < kmax,
+    do: false
+
+  defp leaf_key([], _key, _kmax), do: false
+
+  defp leaf_key([{_k, _v} | tail], key, kmax),
+    do: leaf_key(tail, key, kmax)
+
   # action to take given a new, candidate key and a leaf
   #  :take   if the leaf is nil and thus free
   #  :update if the candidate key is already present in the leaf
@@ -139,7 +187,8 @@ defmodule Radix do
 
     case <<k::bitstring, 0::size(pad1)>> == <<key::bitstring, 0::size(pad2)>> do
       false -> :split
-      true -> if List.keyfind(leaf, key, 0) == nil, do: :add, else: :update
+      # true -> if List.keyfind(leaf, key, 0) == nil, do: :add, else: :update
+      true -> if leaf_key(leaf, key, bit_size(key)), do: :update, else: :add
     end
   end
 
@@ -180,14 +229,17 @@ defmodule Radix do
     do: pos
 
   # get key's position (bitpos) in the tree
+  # - if no leaf if found -> it's the last bit in the new key
+  # - if a leaf is found
+  #   -> if key is in leaf -> it's the leaf's position
+  #   -> if key not in leaf -> it's the first bit that differs leaf's 1st key
   @spec position(tree, key) :: bitpos
-  defp position(_tree, key) when bit_size(key) == 0,
-    do: 0
-
   defp position(tree, key) do
-    case leaf(tree, key, bit_size(key)) do
-      nil -> bit_size(key) - 1
-      leaf -> differ(leaf, key)
+    max = bit_size(key)
+
+    case leaf_pos(tree, key) do
+      {_, nil} -> max(0, max - 1)
+      {pos, leaf} -> if leaf_key(leaf, key, max), do: pos, else: differ(leaf, key)
     end
   end
 
@@ -245,10 +297,11 @@ defmodule Radix do
   """
   @spec get(tree, key, any) :: {key, value} | any
   def get({0, _, _} = tree, key, default \\ nil) when is_bitstring(key) do
-    # Lists.keyfind(leaf, key, 0, default)
-    case leaf(tree, key, :erlang.bit_size(key)) do
+    kmax = bit_size(key)
+
+    case leaf(tree, key, kmax) do
       nil -> default
-      leaf -> :lists.keyfind(key, 1, leaf) || default
+      leaf -> leaf_key(leaf, key, kmax) || default
     end
   end
 
@@ -299,11 +352,12 @@ defmodule Radix do
 
 
   """
-  def put({0, _, _} = tree, key, value) when is_bitstring(key),
-    do: put(tree, position(tree, key), key, value)
+  def put({0, _, _} = tree, key, value) when is_bitstring(key) do
+    put(tree, position(tree, key), key, value)
+  end
 
-  # putp
-  # - putps/updates a {key,value}-pair into the tree
+  # put
+  # - puts/updates a {key,value}-pair in the tree
   # - pos is maximum depth to travel down the tree before splitting
 
   # max depth exceeded, so split the tree here
@@ -315,7 +369,7 @@ defmodule Radix do
     end
   end
 
-  # putp somewhere in the left/right subtree
+  # put somewhere in the left/right subtree
   defp put({bit, l, r}, pos, key, val) do
     case bit(key, bit) do
       0 -> {bit, put(l, pos, key, val), r}
@@ -508,21 +562,6 @@ defmodule Radix do
   defp lpm(leaf, key, kmax),
     do: leaf_match(leaf, key, kmax)
 
-  defp leaf_match([], _key, _kmax), do: nil
-
-  defp leaf_match([{k, _v} | tail], key, kmax) when bit_size(k) > kmax,
-    do: leaf_match(tail, key, kmax)
-
-  defp leaf_match([{k, v} | tail], key, kmax) do
-    len = bit_size(k)
-    <<key::bitstring-size(len), _::bitstring>> = key
-
-    case k == key do
-      true -> {k, v}
-      false -> leaf_match(tail, key, kmax)
-    end
-  end
-
   @doc """
   Lookup given search `key` in `tree` and update the value of matched key with
   the given function.
@@ -564,7 +603,8 @@ defmodule Radix do
   - `:less` finds all key,value-pairs where key in tree is a prefix of the search `key`.
 
   The search type defaults to `:more` finding all key,value-pairs whose key matches the
-  search `key`.  Includes the search `key`,value-pair in the results if present in the radix tree.
+  search `key`.  Includes the search `key`,value-pair in the results if present
+  in the radix tree.
 
   ## Examples
 
@@ -609,7 +649,7 @@ defmodule Radix do
     do: apm(tree, key)
 
   # all prefix matches: search key is prefix of stored key(s)
-  @spec apm(tree | leaf, key) :: [{key, value}]
+  @spec apm(tree | leaf, key) :: [{key, value}] | []
   defp apm({b, l, r} = _tree, key) do
     case bit(key, b) do
       0 -> apm(l, key)
@@ -643,34 +683,6 @@ defmodule Radix do
 
   defp rpm(leaf, key),
     do: Enum.filter(leaf, fn {k, _} -> is_prefix?(key, k) end)
-
-  @doc """
-  Return all key,value-pairs as a flat list, using in-order traversal.
-
-  ## Example
-
-      iex> tree = new([
-      ...>  {<<1, 1, 1, 0::1>>, "1.1.1.0/25"},
-      ...>  {<<1, 1, 1, 1::1>>, "1.1.1.128/25"},
-      ...>  {<<3>>, "3.0.0.0/8"},
-      ...>  {<<1, 1, 1>>, "1.1.1.0/24"}
-      ...>  ])
-      iex> to_list(tree)
-      [
-        {<<1, 1, 1, 0::1>>, "1.1.1.0/25"},
-        {<<1, 1, 1>>, "1.1.1.0/24"},
-        {<<1, 1, 1, 1::1>>, "1.1.1.128/25"},
-        {<<3>>, "3.0.0.0/8"}
-      ]
-
-
-  """
-  @spec to_list(tree) :: [{key, value}]
-  def to_list(tree), do: to_list(tree, [])
-
-  defp to_list(nil, acc), do: acc
-  defp to_list({_bit, l, r}, acc), do: to_list(r, to_list(l, acc))
-  defp to_list(leaf, acc), do: acc ++ leaf
 
   @doc """
   Invokes `fun` for each key,value-pair in the radix tree with the accumulator.
@@ -710,9 +722,37 @@ defmodule Radix do
   defp reducep([{k, v} | tail], fun, acc), do: reducep(tail, fun, fun.(k, v, acc))
 
   @doc """
+  Return all key,value-pairs as a flat list.
+
+  ## Example
+
+      iex> tree = new([
+      ...>  {<<1, 1, 1, 0::1>>, "1.1.1.0/25"},
+      ...>  {<<1, 1, 1, 1::1>>, "1.1.1.128/25"},
+      ...>  {<<3>>, "3.0.0.0/8"},
+      ...>  {<<1, 1, 1>>, "1.1.1.0/24"}
+      ...>  ])
+      iex> to_list(tree)
+      [
+        {<<1, 1, 1, 0::1>>, "1.1.1.0/25"},
+        {<<1, 1, 1>>, "1.1.1.0/24"},
+        {<<1, 1, 1, 1::1>>, "1.1.1.128/25"},
+        {<<3>>, "3.0.0.0/8"}
+      ]
+
+
+  """
+  @spec to_list(tree) :: [{key, value}]
+  def to_list({0, _, _} = tree) do
+    tree
+    |> reducep(fn k, v, acc -> [{k, v} | acc] end, [])
+    |> Enum.reverse()
+  end
+
+  @doc """
   Returns all keys from the radix `tree`.
 
-  # Example
+  ## Example
 
       iex> t = new([
       ...>  {<<1, 1, 1, 0::1>>, "1.1.1.0/25"},
@@ -727,14 +767,14 @@ defmodule Radix do
   @spec keys(tree) :: [key]
   def keys({0, _, _} = tree) do
     tree
-    |> reduce(fn k, _v, acc -> [k | acc] end, [])
+    |> reducep(fn k, _v, acc -> [k | acc] end, [])
     |> Enum.reverse()
   end
 
   @doc """
   Returns all values from the radix `tree`.
 
-  # Example
+  ## Example
 
       iex> t = new([
       ...>  {<<1, 1, 1, 0::1>>, "1.1.1.0/25"},
@@ -751,7 +791,7 @@ defmodule Radix do
   @spec values(tree) :: [value]
   def values({0, _, _} = tree) do
     tree
-    |> reduce(fn _k, v, acc -> [v | acc] end, [])
+    |> reducep(fn _k, v, acc -> [v | acc] end, [])
     |> Enum.reverse()
   end
 

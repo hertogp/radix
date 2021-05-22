@@ -38,11 +38,25 @@ defmodule Alt0 do
   def leaf(leaf, _key, _max), do: leaf
 
   def get({0, _, _} = tree, key, default \\ nil) do
-    case leaf(tree, key, :erlang.bit_size(key)) do
+    # leaf -> :lists.keyfind(key, 1, leaf) || default
+    kmax = :erlang.bit_size(key)
+
+    case leaf(tree, key, kmax) do
       nil -> default
-      leaf -> :lists.keyfind(key, 1, leaf) || default
+      leaf -> leaf_get(leaf, key, kmax) || default
     end
   end
+
+  defp leaf_get([], _key, _kmax), do: false
+
+  defp leaf_get([{k, v} | _tail], key, _kmax) when k == key,
+    do: {k, v}
+
+  defp leaf_get([{k, _v} | _tail], _key, kmax) when bit_size(k) < kmax,
+    do: false
+
+  defp leaf_get([{_k, _v} | tail], key, kmax),
+    do: leaf_get(tail, key, kmax)
 end
 
 defmodule Alt1 do

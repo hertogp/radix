@@ -56,6 +56,25 @@ defmodule RadixTest do
       |> put(<<128, 1, 2, 3>>, "42")
 
     assert t == {0, nil, [{<<128, 1, 2, 3>>, "42"}]}
+
+    t =
+      new()
+      |> put(<<1>>, 1)
+      |> put(<<1>>, "one")
+      |> put(<<128>>, 128)
+      |> put(<<>>, 0)
+
+    assert get(t, <<>>) == {<<>>, 0}
+    assert get(t, <<1>>) == {<<1>>, "one"}
+    assert get(t, <<128>>) == {<<128>>, 128}
+
+    # empty key also gets replaced
+    t = put(t, <<>>, "null")
+    assert get(t, <<>>) == {<<>>, "null"}
+    assert get(t, <<1>>) == {<<1>>, "one"}
+    assert get(t, <<128>>) == {<<128>>, 128}
+    # assert get(t, <<1, 0::1>>) == {<<1, 0::1>>, "two"}
+    # assert get(t, <<1, 0::2>>) == {<<1, 0::2>>, 3}
   end
 
   test "put requires valid tree and key" do
