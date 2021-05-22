@@ -108,19 +108,21 @@ defmodule Radix do
 
   # follow key-path and return a leaf (which might be nil)
   # - inlining bit check doesn't really speed things up
-  @spec leaf(tree | leaf, key) :: leaf
-  defp leaf({bit, l, r}, key) do
-    case(bit(key, bit)) do
-      0 -> leaf(l, key)
-      1 -> leaf(r, key)
+  @spec leaf(tree | leaf, key, non_neg_integer) :: leaf
+  defp leaf({bit, l, r}, key, max) when bit < max do
+    <<_::size(bit), bit::1, _::bitstring>> = key
+
+    case(bit) do
+      0 -> leaf(l, key, max)
+      1 -> leaf(r, key, max)
     end
   end
 
-  defp leaf([{_k, _v} | _tail] = leaf, _key),
-    do: leaf
+  defp leaf({_, l, _}, key, max),
+    do: leaf(l, key, max)
 
-  defp leaf(_, _key),
-    do: nil
+  defp leaf(leaf, _key, _max),
+    do: leaf
 
   # action to take given a new, candidate key and a leaf
   #  :take   if the leaf is nil and thus free
@@ -183,7 +185,7 @@ defmodule Radix do
     do: 0
 
   defp position(tree, key) do
-    case leaf(tree, key) do
+    case leaf(tree, key, bit_size(key)) do
       nil -> bit_size(key) - 1
       leaf -> differ(leaf, key)
     end
@@ -243,9 +245,10 @@ defmodule Radix do
   """
   @spec get(tree, key, any) :: {key, value} | any
   def get({0, _, _} = tree, key, default \\ nil) when is_bitstring(key) do
-    case leaf(tree, key) do
+    # Lists.keyfind(leaf, key, 0, default)
+    case leaf(tree, key, :erlang.bit_size(key)) do
       nil -> default
-      leaf -> List.keyfind(leaf, key, 0, default)
+      leaf -> :lists.keyfind(key, 1, leaf) || default
     end
   end
 
@@ -478,27 +481,47 @@ defmodule Radix do
   """
   @spec lookup(tree, key) :: {key, value} | nil
   def lookup({0, _, _} = tree, key) when is_bitstring(key),
-    do: lpm(tree, key)
+    do: lpm(tree, key, bit_size(key))
 
-  @spec lpm(tree | leaf, key) :: {key, value} | nil
-  defp lpm({b, l, r} = _tree, key) do
-    case bit(key, b) do
+  @spec lpm(tree | leaf, key, non_neg_integer) :: {key, value} | nil
+  defp lpm({b, l, r} = _tree, key, kmax) when b < kmax do
+    <<_::size(b), bit::1, _::bitstring>> = key
+
+    case bit do
       0 ->
-        lpm(l, key)
+        lpm(l, key, kmax)
 
       1 ->
-        case lpm(r, key) do
-          nil -> lpm(l, key)
+        case lpm(r, key, kmax) do
+          nil -> lpm(l, key, kmax)
           x -> x
         end
     end
   end
 
-  defp lpm(nil, _key),
+  defp lpm({_, l, _}, key, kmax),
+    do: lpm(l, key, kmax)
+
+  defp lpm(nil, _key, _kmax),
     do: nil
 
-  defp lpm(leaf, key),
-    do: Enum.find(leaf, fn {k, _} -> is_prefix?(k, key) end)
+  defp lpm(leaf, key, kmax),
+    do: leaf_match(leaf, key, kmax)
+
+  defp leaf_match([], _key, _kmax), do: nil
+
+  defp leaf_match([{k, _v} | tail], key, kmax) when bit_size(k) > kmax,
+    do: leaf_match(tail, key, kmax)
+
+  defp leaf_match([{k, v} | tail], key, kmax) do
+    len = bit_size(k)
+    <<key::bitstring-size(len), _::bitstring>> = key
+
+    case k == key do
+      true -> {k, v}
+      false -> leaf_match(tail, key, kmax)
+    end
+  end
 
   @doc """
   Lookup given search `key` in `tree` and update the value of matched key with
@@ -541,7 +564,7 @@ defmodule Radix do
   - `:less` finds all key,value-pairs where key in tree is a prefix of the search `key`.
 
   The search type defaults to `:more` finding all key,value-pairs whose key matches the
-  search `key`.  Includes search `key` in the results if present in the radix tree.
+  search `key`.  Includes the search `key`,value-pair in the results if present in the radix tree.
 
   ## Examples
 
