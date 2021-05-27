@@ -125,10 +125,11 @@ defmodule Radix do
     do: leaf
 
   # given a key, traverse the tree and return the leaf and its position
-  def leaf_pos(tree, key),
+  @spec leaf_pos(tree, key) :: {non_neg_integer, leaf}
+  defp leaf_pos(tree, key),
     do: leaf_pos(tree, key, bit_size(key), 0)
 
-  def leaf_pos({b, l, r}, key, max, _pos) when b < max do
+  defp leaf_pos({b, l, r}, key, max, _pos) when b < max do
     <<_::size(b), bit::1, _::bitstring>> = key
 
     case(bit) do
@@ -137,10 +138,10 @@ defmodule Radix do
     end
   end
 
-  def leaf_pos({b, l, _}, key, max, _pos),
+  defp leaf_pos({b, l, _}, key, max, _pos),
     do: leaf_pos(l, key, max, b)
 
-  def leaf_pos(leaf, _key, _max, pos),
+  defp leaf_pos(leaf, _key, _max, pos),
     do: {pos, leaf}
 
   @spec leaf_match(leaf, key, non_neg_integer) :: {key, value} | nil
