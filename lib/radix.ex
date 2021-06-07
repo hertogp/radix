@@ -504,8 +504,8 @@ defmodule Radix do
 
   """
   @spec drop(tree, [key]) :: tree
-  def drop({0, _, _} = tree, [k | _] = keys) when is_bitstring(k),
-    do: Enum.reduce(keys, tree, fn key, tree -> delp(tree, key) end)
+  def drop({0, _, _} = tree, keys) when is_list(keys),
+    do: Enum.reduce(keys, tree, fn key, tree -> delete(tree, key) end)
 
   # get the longest prefix match for binary key
   # - follow tree path using key and get longest match from the leaf found
