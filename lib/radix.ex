@@ -144,32 +144,16 @@ defmodule Radix do
   defp leaf_pos(leaf, _key, _max, pos),
     do: {pos, leaf}
 
-  @spec leaf_match(leaf, key, non_neg_integer) :: {key, value} | nil
-  defp leaf_match([], _key, _kmax), do: nil
-
-  defp leaf_match([{k, _v} | tail], key, kmax) when bit_size(k) > kmax,
-    do: leaf_match(tail, key, kmax)
-
-  defp leaf_match([{k, v} | tail], key, kmax) do
-    len = bit_size(k)
-    <<key::bitstring-size(len), _::bitstring>> = key
-
-    case k == key do
-      true -> {k, v}
-      false -> leaf_match(tail, key, kmax)
-    end
-  end
-
-  # given a leaf and a key, return either {key, value} (exact match) or false
-  @spec leaf_get(leaf, key, non_neg_integer) :: {key, value} | false
+  # given a leaf and a key, return either {key, value} (exact match) or nil
+  @spec leaf_get(leaf, key, non_neg_integer) :: {key, value} | nil
   defp leaf_get([{k, v} | _tail], key, _kmax) when k == key,
     do: {k, v}
 
   # shorter keys will never equal search `key`
   defp leaf_get([{k, _v} | _tail], _key, kmax) when bit_size(k) < kmax,
-    do: false
+    do: nil
 
-  defp leaf_get([], _key, _kmax), do: false
+  defp leaf_get([], _key, _kmax), do: nil
 
   defp leaf_get([{_k, _v} | tail], key, kmax),
     do: leaf_get(tail, key, kmax)
@@ -189,8 +173,7 @@ defmodule Radix do
 
     case <<k::bitstring, 0::size(pad1)>> == <<key::bitstring, 0::size(pad2)>> do
       false -> :split
-      # true -> if List.keyfind(leaf, key, 0) == nil, do: :add, else: :update
-      true -> if leaf_get(leaf, key, bit_size(key)), do: :update, else: :add
+      true -> (leaf_get(leaf, key, bit_size(key)) && :update) || :add
     end
   end
 
@@ -241,7 +224,7 @@ defmodule Radix do
 
     case leaf_pos(tree, key) do
       {_, nil} -> max(0, max - 1)
-      {pos, leaf} -> if leaf_get(leaf, key, max), do: pos, else: differ(leaf, key)
+      {pos, leaf} -> (leaf_get(leaf, key, max) && pos) || differ(leaf, key)
     end
   end
 
@@ -544,14 +527,8 @@ defmodule Radix do
     <<_::size(b), bit::1, _::bitstring>> = key
 
     case bit do
-      0 ->
-        lpm(l, key, kmax)
-
-      1 ->
-        case lpm(r, key, kmax) do
-          nil -> lpm(l, key, kmax)
-          x -> x
-        end
+      0 -> lpm(l, key, kmax)
+      1 -> lpm(r, key, kmax) || lpm(l, key, kmax)
     end
   end
 
@@ -562,7 +539,24 @@ defmodule Radix do
     do: nil
 
   defp lpm(leaf, key, kmax),
-    do: leaf_match(leaf, key, kmax)
+    do: lpm_leaf(leaf, key, kmax)
+
+  # given a leaf and a key, return either {key, value} (longest match) or return nil
+  @spec lpm_leaf(leaf, key, non_neg_integer) :: {key, value} | nil
+  defp lpm_leaf([{k, _v} | tail], key, kmax) when bit_size(k) > kmax,
+    do: lpm_leaf(tail, key, kmax)
+
+  defp lpm_leaf([{k, v} | tail], key, kmax) do
+    len = bit_size(k)
+    <<key::bitstring-size(len), _::bitstring>> = key
+
+    case k == key do
+      true -> {k, v}
+      false -> lpm_leaf(tail, key, kmax)
+    end
+  end
+
+  defp lpm_leaf([], _key, _kmax), do: nil
 
   @doc """
   Lookup given search `key` in `tree` and update the value of matched key with
