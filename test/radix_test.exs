@@ -255,7 +255,7 @@ defmodule RadixTest do
   end
 
   # Radix.lookup/2
-  test "lookup/2 uses longest prefix match" do
+  test "lookup/2 uses longest prefix match - 1" do
     t =
       new()
       |> put(<<128, 128, 128>>, "128.128.128/24")
@@ -275,6 +275,48 @@ defmodule RadixTest do
     assert lookup(t, <<128, 128, 128, 127>>) == {<<128, 128, 128>>, "128.128.128/24"}
   end
 
+  test "lookup/2 uses longest prefix match - 2" do
+    t =
+      new()
+      |> put(<<0>>, "0.0.0.0/8")
+      |> put(<<0, 0>>, "0.0.0.0/16")
+      |> put(<<0, 0, 0>>, "0.0.0.0/24")
+      |> put(<<0, 0, 0, 0::1>>, "0.0.0.0/25")
+      |> put(<<0, 0, 0, 0::2>>, "0.0.0.0/26")
+
+    assert lookup(t, <<0, 0, 0, 0>>) == {<<0, 0, 0, 0::2>>, "0.0.0.0/26"}
+    assert lookup(t, <<0, 0, 0, 63>>) == {<<0, 0, 0, 0::2>>, "0.0.0.0/26"}
+    assert lookup(t, <<0, 0, 0, 64>>) == {<<0, 0, 0, 0::1>>, "0.0.0.0/25"}
+    assert lookup(t, <<0, 0, 0, 127>>) == {<<0, 0, 0, 0::1>>, "0.0.0.0/25"}
+    assert lookup(t, <<0, 0, 0, 128>>) == {<<0, 0, 0>>, "0.0.0.0/24"}
+    assert lookup(t, <<0, 0, 0, 255>>) == {<<0, 0, 0>>, "0.0.0.0/24"}
+    assert lookup(t, <<0, 0, 1>>) == {<<0, 0>>, "0.0.0.0/16"}
+    assert lookup(t, <<0, 1>>) == {<<0>>, "0.0.0.0/8"}
+    assert lookup(t, <<0, 255>>) == {<<0>>, "0.0.0.0/8"}
+    assert lookup(t, <<0::7>>) == nil
+  end
+
+  test "lookup/2 uses longest prefix match - 3" do
+    t =
+      new()
+      |> put(<<255>>, "255.0.0.0/8")
+      |> put(<<255, 255>>, "255.255.0.0/16")
+      |> put(<<255, 255, 255>>, "255.255.255.0/24")
+      |> put(<<255, 255, 255, 0::1>>, "255.255.255.0/25")
+      |> put(<<255, 255, 255, 0::2>>, "255.255.255.0/26")
+
+    assert lookup(t, <<255, 255, 255, 0>>) == {<<255, 255, 255, 0::2>>, "255.255.255.0/26"}
+    assert lookup(t, <<255, 255, 255, 63>>) == {<<255, 255, 255, 0::2>>, "255.255.255.0/26"}
+    assert lookup(t, <<255, 255, 255, 64>>) == {<<255, 255, 255, 0::1>>, "255.255.255.0/25"}
+    assert lookup(t, <<255, 255, 255, 127>>) == {<<255, 255, 255, 0::1>>, "255.255.255.0/25"}
+    assert lookup(t, <<255, 255, 255, 128>>) == {<<255, 255, 255>>, "255.255.255.0/24"}
+    assert lookup(t, <<255, 255, 255, 255>>) == {<<255, 255, 255>>, "255.255.255.0/24"}
+    assert lookup(t, <<255, 255, 1>>) == {<<255, 255>>, "255.255.0.0/16"}
+    assert lookup(t, <<255, 255>>) == {<<255, 255>>, "255.255.0.0/16"}
+    assert lookup(t, <<255, 1>>) == {<<255>>, "255.0.0.0/8"}
+    assert lookup(t, <<255::7>>) == nil
+  end
+
   test "lookup/2 requires valid root and key" do
     # bad tree
     Enum.each(@bad_trees, fn bad_tree ->
@@ -288,7 +330,7 @@ defmodule RadixTest do
     end)
   end
 
-  test "lookup/2 yields default match when no key matches" do
+  test "lookup/2 yields default match when no key matches - 1" do
     t =
       new()
       |> put(<<128, 128, 128>>, "128.128.128/24")
@@ -306,5 +348,399 @@ defmodule RadixTest do
     assert lookup(t, <<128, 128>>) == {<<>>, "default"}
     assert lookup(t, <<128, 128, 127>>) == {<<>>, "default"}
     assert lookup(t, <<128, 128, 129>>) == {<<>>, "default"}
+  end
+
+  test "lookup/2 yields default match when no key matches - 2" do
+    t =
+      new()
+      |> put(<<>>, 1)
+      |> put(<<255>>, 2)
+      |> put(<<128>>, 3)
+      |> put(<<0>>, 4)
+
+    # existing keys should be found normally
+    assert lookup(t, <<>>) == {<<>>, 1}
+    assert lookup(t, <<255>>) == {<<255>>, 2}
+    assert lookup(t, <<128>>) == {<<128>>, 3}
+    assert lookup(t, <<0>>) == {<<0>>, 4}
+
+    # non-existing keys should yield the default match
+    assert lookup(t, <<1>>) == {<<>>, 1}
+    assert lookup(t, <<127>>) == {<<>>, 1}
+    assert lookup(t, <<254>>) == {<<>>, 1}
+    assert lookup(t, <<0::7>>) == {<<>>, 1}
+  end
+
+  # Radix.lookup_update
+
+  test "lookup_update/4" do
+    increment = fn x -> x + 1 end
+
+    t =
+      new()
+      |> put(<<128, 128, 128>>, 0)
+      |> put(<<128, 128, 128, 1::1>>, 0)
+      |> put(<<128, 128, 128, 2::2>>, 0)
+
+    assert lookup(t, <<128, 128, 128>>) == {<<128, 128, 128>>, 0}
+    assert lookup(t, <<128, 128, 128, 1::1>>) == {<<128, 128, 128, 1::1>>, 0}
+    assert lookup(t, <<128, 128, 128, 2::2>>) == {<<128, 128, 128, 2::2>>, 0}
+    assert lookup(t, <<>>) == nil
+
+    # <<0>> not in tree yet, gets default value of 1
+    t = lookup_update(t, <<0>>, 1, increment)
+    assert get(t, <<0>>) == {<<0>>, 1}
+
+    # <<>> not in tree yet, gets default value of 1
+    t = lookup_update(t, <<>>, 1, increment)
+    assert get(t, <<>>) == {<<>>, 1}
+    assert lookup(t, <<255>>) == {<<>>, 1}
+
+    # these all exist and get incremented to 1
+    t = lookup_update(t, <<128, 128, 128>>, -1, increment)
+    assert get(t, <<128, 128, 128>>) == {<<128, 128, 128>>, 1}
+
+    t = lookup_update(t, <<128, 128, 128, 1::1>>, -1, increment)
+    assert get(t, <<128, 128, 128, 1::1>>) == {<<128, 128, 128, 1::1>>, 1}
+
+    t = lookup_update(t, <<128, 128, 128, 2::2>>, -1, increment)
+    assert get(t, <<128, 128, 128, 2::2>>) == {<<128, 128, 128, 2::2>>, 1}
+  end
+
+  test "lookup_update/4 requires valid root, key and fun/1" do
+    goodfun = fn x -> x end
+    badfun = fn x, y -> {x, y} end
+
+    # bad tree
+    Enum.each(@bad_trees, fn bad_tree ->
+      assert_raise FunctionClauseError, fn -> lookup_update(bad_tree, <<0>>, 1, goodfun) end
+    end)
+
+    Enum.each(@bad_keys, fn bad_tree ->
+      assert_raise FunctionClauseError, fn -> lookup_update(bad_tree, <<0>>, 1, goodfun) end
+    end)
+
+    tree = new()
+
+    assert_raise FunctionClauseError, fn -> lookup_update(tree, <<0>>, 1, badfun) end
+  end
+
+  # Radix.search/3
+  test "search/3 - more specifics" do
+    t =
+      new()
+      |> put(<<255>>, 8)
+      |> put(<<255, 255>>, 16)
+      |> put(<<255, 255, 1::1>>, 17)
+      |> put(<<255, 255, 3::2>>, 18)
+
+    more = search(t, <<>>, :more)
+    assert Enum.count(more) == 4
+    assert {<<255>>, 8} in more
+    assert {<<255, 255>>, 16} in more
+    assert {<<255, 255, 1::1>>, 17} in more
+    assert {<<255, 255, 3::2>>, 18} in more
+
+    more = search(t, <<255>>, :more)
+    assert Enum.count(more) == 4
+    assert {<<255>>, 8} in more
+    assert {<<255, 255>>, 16} in more
+    assert {<<255, 255, 1::1>>, 17} in more
+    assert {<<255, 255, 3::2>>, 18} in more
+
+    more = search(t, <<255, 255>>, :more)
+    assert Enum.count(more) == 3
+    assert {<<255, 255>>, 16} in more
+    assert {<<255, 255, 1::1>>, 17} in more
+    assert {<<255, 255, 3::2>>, 18} in more
+
+    more = search(t, <<255, 1::1>>, :more)
+    assert Enum.count(more) == 3
+    assert {<<255, 255>>, 16} in more
+    assert {<<255, 255, 1::1>>, 17} in more
+    assert {<<255, 255, 3::2>>, 18} in more
+
+    more = search(t, <<255, 255::7>>, :more)
+    assert Enum.count(more) == 3
+    assert {<<255, 255>>, 16} in more
+    assert {<<255, 255, 1::1>>, 17} in more
+    assert {<<255, 255, 3::2>>, 18} in more
+
+    more = search(t, <<255, 255, 1::1>>, :more)
+    assert Enum.count(more) == 2
+    assert {<<255, 255, 1::1>>, 17} in more
+    assert {<<255, 255, 3::2>>, 18} in more
+
+    more = search(t, <<255, 255, 3::2>>, :more)
+    assert Enum.count(more) == 1
+    assert {<<255, 255, 3::2>>, 18} in more
+
+    # keys without more specifics
+    assert search(t, <<254>>) == []
+    assert search(t, <<255, 0::1>>) == []
+    assert search(t, <<255, 255, 0::1>>) == []
+  end
+
+  test "search/3 - less specifics" do
+    t =
+      new()
+      |> put(<<255>>, 8)
+      |> put(<<255, 255>>, 16)
+      |> put(<<255, 255, 1::1>>, 17)
+      |> put(<<255, 255, 3::2>>, 18)
+
+    less = search(t, <<255, 255, 255, 255>>, :less)
+    assert Enum.count(less) == 4
+    assert {<<255>>, 8} in less
+    assert {<<255, 255>>, 16} in less
+    assert {<<255, 255, 1::1>>, 17} in less
+    assert {<<255, 255, 3::2>>, 18} in less
+
+    less = search(t, <<255, 255, 3::2>>, :less)
+    assert Enum.count(less) == 4
+    assert {<<255>>, 8} in less
+    assert {<<255, 255>>, 16} in less
+    assert {<<255, 255, 1::1>>, 17} in less
+    assert {<<255, 255, 3::2>>, 18} in less
+
+    less = search(t, <<255, 255, 1::1>>, :less)
+    assert Enum.count(less) == 3
+    assert {<<255>>, 8} in less
+    assert {<<255, 255>>, 16} in less
+    assert {<<255, 255, 1::1>>, 17} in less
+
+    less = search(t, <<255, 255>>, :less)
+    assert Enum.count(less) == 2
+    assert {<<255>>, 8} in less
+    assert {<<255, 255>>, 16} in less
+
+    less = search(t, <<255>>, :less)
+    assert Enum.count(less) == 1
+    assert {<<255>>, 8} in less
+
+    # keys without less specifics
+    assert search(t, <<>>, :less) == []
+  end
+
+  test "search/3 requires valid tree and key" do
+    # bad tree
+    Enum.each(@bad_trees, fn bad_tree ->
+      assert_raise FunctionClauseError, fn -> search(bad_tree, <<0>>, :more) end
+    end)
+
+    tree = new()
+
+    Enum.each(@bad_keys, fn bad_key ->
+      assert_raise FunctionClauseError, fn -> search(tree, bad_key, :more) end
+    end)
+
+    assert_raise FunctionClauseError, fn -> search(tree, <<>>, :best) end
+  end
+
+  # Radix.reduce/3
+  test "reduce/3 visits all k,v-pairs" do
+    t =
+      new()
+      |> put(<<255>>, 1)
+      |> put(<<255, 255>>, 2)
+      |> put(<<255, 255, 1::1>>, 3)
+      |> put(<<255, 255, 3::2>>, 4)
+      |> put(<<128>>, 5)
+      |> put(<<128, 128>>, 6)
+      |> put(<<128, 128, 1::1>>, 7)
+      |> put(<<128, 128, 3::2>>, 8)
+      |> put(<<0>>, 9)
+      |> put(<<0, 0>>, 10)
+      |> put(<<0, 0, 0::1>>, 11)
+      |> put(<<0, 0, 0::2>>, 12)
+
+    fun = fn _key, value, acc -> acc + value end
+
+    assert reduce(t, 0, fun) == Enum.sum(1..12)
+  end
+
+  test "reduce/3 requires the tree's root node" do
+    Enum.each(@bad_trees, fn bad_tree ->
+      assert_raise FunctionClauseError, fn -> reduce(bad_tree, 0, fn _k, v, a -> a + v end) end
+    end)
+  end
+
+  # Radix.to_list/1
+  test "to_list/1 lists all k,v-pairs" do
+    t =
+      new()
+      |> put(<<255>>, 1)
+      |> put(<<255, 255>>, 2)
+      |> put(<<255, 255, 1::1>>, 3)
+      |> put(<<255, 255, 3::2>>, 4)
+      |> put(<<128>>, 5)
+      |> put(<<128, 128>>, 6)
+      |> put(<<128, 128, 1::1>>, 7)
+      |> put(<<128, 128, 3::2>>, 8)
+      |> put(<<0>>, 9)
+      |> put(<<0, 0>>, 10)
+      |> put(<<0, 0, 0::1>>, 11)
+      |> put(<<0, 0, 0::2>>, 12)
+
+    kvs = to_list(t)
+    assert Enum.count(kvs) == 12
+    assert Enum.reduce(kvs, 0, fn {_k, v}, acc -> v + acc end) == Enum.sum(1..12)
+  end
+
+  test "to_list/1 requires tree's root node" do
+    Enum.each(@bad_trees, fn bad_tree ->
+      assert_raise FunctionClauseError, fn -> to_list(bad_tree) end
+    end)
+  end
+
+  # Radix.keys/1
+  test "keys/1 lists all keys" do
+    t =
+      new()
+      |> put(<<255>>, 1)
+      |> put(<<255, 255>>, 2)
+      |> put(<<255, 255, 1::1>>, 3)
+      |> put(<<255, 255, 3::2>>, 4)
+      |> put(<<128>>, 5)
+      |> put(<<128, 128>>, 6)
+      |> put(<<128, 128, 1::1>>, 7)
+      |> put(<<128, 128, 3::2>>, 8)
+      |> put(<<0>>, 9)
+      |> put(<<0, 0>>, 10)
+      |> put(<<0, 0, 0::1>>, 11)
+      |> put(<<0, 0, 0::2>>, 12)
+
+    keys = keys(t)
+    assert Enum.count(keys) == 12
+    assert <<255>> in keys
+    assert <<255, 255>> in keys
+    assert <<255, 255, 1::1>> in keys
+    assert <<255, 255, 3::2>> in keys
+    assert <<128>> in keys
+    assert <<128, 128>> in keys
+    assert <<128, 128, 1::1>> in keys
+    assert <<128, 128, 3::2>> in keys
+    assert <<0>> in keys
+    assert <<0, 0>> in keys
+    assert <<0, 0, 0::1>> in keys
+    assert <<0, 0, 0::2>> in keys
+  end
+
+  test "keys/1 requires tree's root node" do
+    Enum.each(@bad_trees, fn bad_tree ->
+      assert_raise FunctionClauseError, fn -> keys(bad_tree) end
+    end)
+  end
+
+  # Radix.values/1
+  test "values/1 lists all values" do
+    t =
+      new()
+      |> put(<<255>>, 1)
+      |> put(<<255, 255>>, 2)
+      |> put(<<255, 255, 1::1>>, 3)
+      |> put(<<255, 255, 3::2>>, 4)
+      |> put(<<128>>, 5)
+      |> put(<<128, 128>>, 6)
+      |> put(<<128, 128, 1::1>>, 7)
+      |> put(<<128, 128, 3::2>>, 8)
+      |> put(<<0>>, 9)
+      |> put(<<0, 0>>, 10)
+      |> put(<<0, 0, 0::1>>, 11)
+      |> put(<<0, 0, 0::2>>, 12)
+
+    values = values(t)
+    assert Enum.count(values) == 12
+    assert Enum.sum(values) == Enum.sum(1..12)
+  end
+
+  test "values/1 requires tree's root node" do
+    Enum.each(@bad_trees, fn bad_tree ->
+      assert_raise FunctionClauseError, fn -> values(bad_tree) end
+    end)
+  end
+
+  # Radix.traverse/4
+  test "traverse/4 visits all nodes - in-order" do
+    t =
+      new()
+      |> put(<<>>, 1)
+      |> put(<<255>>, 2)
+      |> put(<<128>>, 3)
+      |> put(<<0>>, 4)
+
+    f = fn
+      acc, {b, _l, _r} -> [{b, "l", "r"} | acc]
+      acc, nil -> acc
+      acc, leaf -> [leaf | acc]
+    end
+
+    nodes = traverse(t, [], f)
+
+    assert nodes == [
+             [{<<255>>, 2}],
+             {1, "l", "r"},
+             [{<<128>>, 3}],
+             {0, "l", "r"},
+             [{<<0>>, 4}, {"", 1}]
+           ]
+  end
+
+  test "traverse/4 visits all nodes - pre-order" do
+    t =
+      new()
+      |> put(<<>>, 1)
+      |> put(<<255>>, 2)
+      |> put(<<128>>, 3)
+      |> put(<<0>>, 4)
+
+    f = fn
+      acc, {b, _l, _r} -> [{b, "l", "r"} | acc]
+      acc, nil -> acc
+      acc, leaf -> [leaf | acc]
+    end
+
+    nodes = traverse(t, [], f, :preorder)
+
+    assert nodes == [
+             [{<<255>>, 2}],
+             [{<<128>>, 3}],
+             {1, "l", "r"},
+             [{<<0>>, 4}, {"", 1}],
+             {0, "l", "r"}
+           ]
+  end
+
+  test "traverse/4 visits all nodes - post-order" do
+    t =
+      new()
+      |> put(<<>>, 1)
+      |> put(<<255>>, 2)
+      |> put(<<128>>, 3)
+      |> put(<<0>>, 4)
+
+    f = fn
+      acc, {b, _l, _r} -> [{b, "l", "r"} | acc]
+      acc, nil -> acc
+      acc, leaf -> [leaf | acc]
+    end
+
+    nodes = traverse(t, [], f, :postorder)
+
+    assert nodes == [
+             {0, "l", "r"},
+             {1, "l", "r"},
+             [{<<255>>, 2}],
+             [{<<128>>, 3}],
+             [{<<0>>, 4}, {"", 1}]
+           ]
+  end
+
+  test "traverse/3 requires tree's root node" do
+    f = fn x -> x end
+
+    Enum.each(@bad_trees, fn bad_tree ->
+      assert_raise FunctionClauseError, fn -> traverse(bad_tree, f, []) end
+    end)
   end
 end

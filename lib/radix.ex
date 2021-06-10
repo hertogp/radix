@@ -589,7 +589,7 @@ defmodule Radix do
 
   """
   @spec lookup_update(tree, key, value, (value -> value)) :: tree
-  def lookup_update({0, _, _} = tree, key, default \\ nil, fun)
+  def lookup_update({0, _, _} = tree, key, default, fun)
       when is_bitstring(key) and is_function(fun, 1) do
     case lookup(tree, key) do
       nil -> put(tree, key, default)
@@ -707,20 +707,20 @@ defmodule Radix do
       iex> # get values
       iex>
       iex> f = fn _key, value, acc -> [value | acc] end
-      iex> reduce(t, f, []) |> Enum.reverse()
+      iex> reduce(t, [], f) |> Enum.reverse()
       ["1.1.1.0/25", "1.1.1.0/24", "1.1.1.128/25", "3.0.0.0/8"]
 
   """
-  @spec reduce(tree, (key, value, acc -> acc), acc) :: acc
-  def reduce({0, _, _} = tree, fun, acc) when is_function(fun, 3),
-    do: reducep(tree, fun, acc)
+  @spec reduce(tree, acc, (key, value, acc -> acc)) :: acc
+  def reduce({0, _, _} = tree, acc, fun) when is_function(fun, 3),
+    do: reducep(tree, acc, fun)
 
-  @spec reducep(tree, (key, value, acc -> acc), acc) :: acc
-  defp reducep(tree, fun, acc)
-  defp reducep(nil, _f, acc), do: acc
-  defp reducep([], _f, acc), do: acc
-  defp reducep({_, l, r}, fun, acc), do: reducep(r, fun, reducep(l, fun, acc))
-  defp reducep([{k, v} | tail], fun, acc), do: reducep(tail, fun, fun.(k, v, acc))
+  @spec reducep(tree, acc, (key, value, acc -> acc)) :: acc
+  defp reducep(tree, acc, fun)
+  defp reducep(nil, acc, _fun), do: acc
+  defp reducep([], acc, _fun), do: acc
+  defp reducep({_, l, r}, acc, fun), do: reducep(r, reducep(l, acc, fun), fun)
+  defp reducep([{k, v} | tail], acc, fun), do: reducep(tail, fun.(k, v, acc), fun)
 
   @doc """
   Return all key,value-pairs as a flat list.
@@ -746,7 +746,7 @@ defmodule Radix do
   @spec to_list(tree) :: [{key, value}]
   def to_list({0, _, _} = tree) do
     tree
-    |> reducep(fn k, v, acc -> [{k, v} | acc] end, [])
+    |> reducep([], fn k, v, acc -> [{k, v} | acc] end)
     |> Enum.reverse()
   end
 
@@ -768,7 +768,7 @@ defmodule Radix do
   @spec keys(tree) :: [key]
   def keys({0, _, _} = tree) do
     tree
-    |> reducep(fn k, _v, acc -> [k | acc] end, [])
+    |> reducep([], fn k, _v, acc -> [k | acc] end)
     |> Enum.reverse()
   end
 
@@ -792,7 +792,7 @@ defmodule Radix do
   @spec values(tree) :: [value]
   def values({0, _, _} = tree) do
     tree
-    |> reducep(fn _k, v, acc -> [v | acc] end, [])
+    |> reducep([], fn _k, v, acc -> [v | acc] end)
     |> Enum.reverse()
   end
 
@@ -816,12 +816,12 @@ defmodule Radix do
       ...>   (acc, leaf) -> acc ++ Enum.map(leaf, fn {_k, v} -> v end)
       ...> end
       iex>
-      iex> traverse(t, f, [])
+      iex> traverse(t, [], f)
       [1, 2, 3, 128]
 
   """
-  @spec traverse(tree, (acc, tree | leaf -> acc), acc, atom) :: acc
-  def traverse(tree, fun, acc, order \\ :inorder),
+  @spec traverse(tree, acc, (acc, tree | leaf -> acc), atom) :: acc
+  def traverse({0, _, _} = tree, acc, fun, order \\ :inorder),
     do: traversep(acc, fun, tree, order)
 
   defp traversep(acc, fun, {bit, l, r}, order) do
