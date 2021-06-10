@@ -160,18 +160,19 @@ defmodule Radix do
     end
   end
 
-  @spec leaf_key(leaf, key, non_neg_integer) :: {key, value} | false
-  defp leaf_key([{k, v} | _tail], key, _kmax) when k == key,
+  # given a leaf and a key, return either {key, value} (exact match) or false
+  @spec leaf_get(leaf, key, non_neg_integer) :: {key, value} | false
+  defp leaf_get([{k, v} | _tail], key, _kmax) when k == key,
     do: {k, v}
 
   # shorter keys will never equal search `key`
-  defp leaf_key([{k, _v} | _tail], _key, kmax) when bit_size(k) < kmax,
+  defp leaf_get([{k, _v} | _tail], _key, kmax) when bit_size(k) < kmax,
     do: false
 
-  defp leaf_key([], _key, _kmax), do: false
+  defp leaf_get([], _key, _kmax), do: false
 
-  defp leaf_key([{_k, _v} | tail], key, kmax),
-    do: leaf_key(tail, key, kmax)
+  defp leaf_get([{_k, _v} | tail], key, kmax),
+    do: leaf_get(tail, key, kmax)
 
   # action to take given a new, candidate key and a leaf
   #  :take   if the leaf is nil and thus free
@@ -189,7 +190,7 @@ defmodule Radix do
     case <<k::bitstring, 0::size(pad1)>> == <<key::bitstring, 0::size(pad2)>> do
       false -> :split
       # true -> if List.keyfind(leaf, key, 0) == nil, do: :add, else: :update
-      true -> if leaf_key(leaf, key, bit_size(key)), do: :update, else: :add
+      true -> if leaf_get(leaf, key, bit_size(key)), do: :update, else: :add
     end
   end
 
@@ -240,7 +241,7 @@ defmodule Radix do
 
     case leaf_pos(tree, key) do
       {_, nil} -> max(0, max - 1)
-      {pos, leaf} -> if leaf_key(leaf, key, max), do: pos, else: differ(leaf, key)
+      {pos, leaf} -> if leaf_get(leaf, key, max), do: pos, else: differ(leaf, key)
     end
   end
 
@@ -302,7 +303,7 @@ defmodule Radix do
 
     case leaf(tree, key, kmax) do
       nil -> default
-      leaf -> leaf_key(leaf, key, kmax) || default
+      leaf -> leaf_get(leaf, key, kmax) || default
     end
   end
 
