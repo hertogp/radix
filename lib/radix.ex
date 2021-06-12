@@ -42,13 +42,13 @@ defmodule Radix do
   Regular binaries work too:
 
       iex> t = new([{"A.new", "new"}, {"A.newer", "newer"}, {"B.newest", "newest"}])
-      iex> search(t, "A.") |> Enum.reverse()
+      iex> more(t, "A.") |> Enum.reverse()
       [{"A.new", "new"}, {"A.newer", "newer"}]
       #
       iex> lookup(t, "A.newest")
       {"A.new", "new"}
       #
-      iex> search(t, "C.")
+      iex> more(t, "C.")
       []
 
   """
@@ -90,10 +90,6 @@ defmodule Radix do
 
   # Helpers
 
-  # @compile {:inline, error: 2}
-  # defp error(id, detail),
-  #   do: RadixError.new(id, detail)
-
   # bit
   # - extract the value of a bit in a key
   # - bits beyond the key-length are considered `0`
@@ -124,40 +120,6 @@ defmodule Radix do
   defp leaf(leaf, _key, _max),
     do: leaf
 
-  # given a key, traverse the tree and return the leaf and its position
-  @spec leaf_pos(tree, key) :: {non_neg_integer, leaf}
-  defp leaf_pos(tree, key),
-    do: leaf_pos(tree, key, bit_size(key), 0)
-
-  defp leaf_pos({b, l, r}, key, max, _pos) when b < max do
-    <<_::size(b), bit::1, _::bitstring>> = key
-
-    case(bit) do
-      0 -> leaf_pos(l, key, max, b)
-      1 -> leaf_pos(r, key, max, b)
-    end
-  end
-
-  defp leaf_pos({b, l, _}, key, max, _pos),
-    do: leaf_pos(l, key, max, b)
-
-  defp leaf_pos(leaf, _key, _max, pos),
-    do: {pos, leaf}
-
-  # given a leaf and a key, return either {key, value} (exact match) or nil
-  @spec leaf_get(leaf, key, non_neg_integer) :: {key, value} | nil
-  defp leaf_get([{k, v} | _tail], key, _kmax) when k == key,
-    do: {k, v}
-
-  # shorter keys will never equal search `key`
-  defp leaf_get([{k, _v} | _tail], _key, kmax) when bit_size(k) < kmax,
-    do: nil
-
-  defp leaf_get([], _key, _kmax), do: nil
-
-  defp leaf_get([{_k, _v} | tail], key, kmax),
-    do: leaf_get(tail, key, kmax)
-
   # action to take given a new, candidate key and a leaf
   #  :take   if the leaf is nil and thus free
   #  :update if the candidate key is already present in the leaf
@@ -173,60 +135,109 @@ defmodule Radix do
 
     case <<k::bitstring, 0::size(pad1)>> == <<key::bitstring, 0::size(pad2)>> do
       false -> :split
-      true -> (leaf_get(leaf, key, bit_size(key)) && :update) || :add
+      true -> (keyget(leaf, key, bit_size(key)) && :update) || :add
     end
   end
 
   # say whether `k` is a prefix of `key`
-  @spec is_prefix?(key, key) :: boolean
-  defp is_prefix?(k, key) when bit_size(k) > bit_size(key),
+  @spec prefix?(key, key) :: boolean
+  defp prefix?(k, key) when bit_size(k) > bit_size(key),
     do: false
 
-  defp is_prefix?(k, key) do
+  defp prefix?(k, key) do
     len = bit_size(k)
     <<key::bitstring-size(len), _::bitstring>> = key
     k == key
   end
 
-  # differ
-  # - find the first bit where two keys differ
-  # - for two equal keys, the last bit position is returned.
-  # - returns the last bitpos if one key is a shorter prefix of the other
-  #   in which case they both should belong to the same leaf.
-  # the bit position is used to determine where a k,v-pair is stored in the tree
+  # given a leaf and a key, return either {key, value} (exact match) or nil
+  # - k,v-pairs in a leaf are sorted from longer -> shorter keys
+  @spec keyget(leaf, key, non_neg_integer) :: {key, value} | nil
+  defp keyget([{k, v} | _tail], key, _kmax) when k == key,
+    do: {k, v}
 
-  # a leaf, only need to check the first/longest key
-  @spec differ(leaf, key) :: bitpos
-  defp differ([{k, _v} | _tail], key),
-    do: diffkey(k, key, 0)
+  # stop checking once leaf keys are shorter than search key
+  defp keyget([{k, _v} | _tail], _key, kmax) when bit_size(k) < kmax,
+    do: nil
 
-  # stop recursion once longest key is exhausted
-  @spec diffkey(key, key, bitpos) :: bitpos
-  defp diffkey(k, key, pos) when pos < bit_size(k) or pos < bit_size(key) do
-    case bit(key, pos) == bit(k, pos) do
-      true -> diffkey(k, key, pos + 1)
-      false -> pos
-    end
-  end
+  defp keyget([{_k, _v} | tail], key, kmax),
+    do: keyget(tail, key, kmax)
 
-  # keep pos if outside both keys
-  defp diffkey(_key1, _key2, pos),
-    do: pos
+  defp keyget([], _key, _kmax), do: nil
 
   # get key's position (bitpos) in the tree
   # - if no leaf if found -> it's the last bit in the new key
   # - if a leaf is found
   #   -> if key is in leaf -> it's the leaf's position
-  #   -> if key not in leaf -> it's the first bit that differs leaf's 1st key
-  @spec position(tree, key) :: bitpos
-  defp position(tree, key) do
+  #   -> if key not in leaf -> it's the first bit that differs from leaf's 1st key
+  @spec keypos(tree, key) :: bitpos
+  defp keypos(tree, key) do
     max = bit_size(key)
 
-    case leaf_pos(tree, key) do
+    case keypos(tree, key, max, 0) do
       {_, nil} -> max(0, max - 1)
-      {pos, leaf} -> (leaf_get(leaf, key, max) && pos) || differ(leaf, key)
+      {bitpos, leaf} -> (keyget(leaf, key, max) && bitpos) || keydiff(leaf, key)
     end
   end
+
+  @spec keypos(tree, key, non_neg_integer, non_neg_integer) :: {non_neg_integer, leaf}
+  defp keypos({bitpos, l, r}, key, max, _pos) when bitpos < max do
+    <<_::size(bitpos), bit::1, _::bitstring>> = key
+
+    case(bit) do
+      0 -> keypos(l, key, max, bitpos)
+      1 -> keypos(r, key, max, bitpos)
+    end
+  end
+
+  # go left when beyond search key's length
+  defp keypos({bitpos, l, _}, key, max, _pos),
+    do: keypos(l, key, max, bitpos)
+
+  defp keypos(leaf, _key, _max, bitpos),
+    do: {bitpos, leaf}
+
+  # given a leaf and a key, return either {key, value} (longest match) or nil
+  @spec keylpm(leaf, key, non_neg_integer) :: {key, value} | nil
+  defp keylpm([{k, _v} | tail], key, kmax) when bit_size(k) > kmax,
+    do: keylpm(tail, key, kmax)
+
+  defp keylpm([{k, v} | tail], key, kmax) do
+    len = bit_size(k)
+    <<key::bitstring-size(len), _::bitstring>> = key
+
+    case k == key do
+      true -> {k, v}
+      false -> keylpm(tail, key, kmax)
+    end
+  end
+
+  defp keylpm([], _key, _kmax), do: nil
+
+  # differ
+  # - find the first bit where two keys differ
+  # - for two equal keys, the last bit's position is returned.
+  # - returns the last bitpos if one key is a shorter prefix of the other
+  #   in which case they both should belong to the same leaf.
+  # - the bit position is used to determine where a k,v-pair is stored in the tree
+  # - for a leaf, only need to check the first/longest key
+
+  @spec keydiff(leaf, key) :: bitpos
+  defp keydiff([{k, _v} | _tail], key),
+    do: keydiff(k, key, 0)
+
+  # stop recursion once longest key is exhausted
+  @spec keydiff(key, key, bitpos) :: bitpos
+  defp keydiff(k, key, pos) when pos < bit_size(k) or pos < bit_size(key) do
+    case bit(key, pos) == bit(k, pos) do
+      true -> keydiff(k, key, pos + 1)
+      false -> pos
+    end
+  end
+
+  # keep pos if outside both keys
+  defp keydiff(_key1, _key2, pos),
+    do: pos
 
   # API
 
@@ -286,7 +297,7 @@ defmodule Radix do
 
     case leaf(tree, key, kmax) do
       nil -> default
-      leaf -> leaf_get(leaf, key, kmax) || default
+      leaf -> keyget(leaf, key, kmax) || default
     end
   end
 
@@ -338,7 +349,7 @@ defmodule Radix do
 
   """
   def put({0, _, _} = tree, key, value) when is_bitstring(key) do
-    put(tree, position(tree, key), key, value)
+    put(tree, keypos(tree, key), key, value)
   end
 
   # put
@@ -380,37 +391,6 @@ defmodule Radix do
 
       :update ->
         List.keyreplace(leaf, key, 0, {key, val})
-    end
-  end
-
-  @doc """
-  Updates the `key` in `tree` with the given function.
-
-  If `key` is present in the radix `tree` then the existing value is passed to
-  `fun` and its result is used as the updated value of `key`. If `key` is not
-  present in `tree`, `default` is inserted as the value for `key`. The default
-  value will not be passed through the update function.
-
-  ## Examples
-
-      iex> t = new()
-      iex> t = update(t, <<1>>, 1, fn x -> x+1 end)
-      iex> t
-      {0, [{<<1>>, 1}], nil}
-      iex> t = update(t, <<1>>, 1, fn x -> x+1 end)
-      iex> t
-      {0, [{<<1>>, 2}], nil}
-      iex> t = update(t, <<1, 1>>, 1, fn x -> x+1 end)
-      iex> t
-      {0, {15, [{<<1>>, 2}], [{<<1, 1>>, 1}]}, nil}
-
-  """
-  @spec update(tree, key, value, (value -> value)) :: tree
-  def update({0, _, _} = tree, key, default, fun)
-      when is_bitstring(key) and is_function(fun, 1) do
-    case get(tree, key) do
-      nil -> put(tree, key, default)
-      {_key, value} -> put(tree, key, fun.(value))
     end
   end
 
@@ -495,7 +475,7 @@ defmodule Radix do
   # - follow tree path using key and get longest match from the leaf found
   # - more specific is to the right, less specific is to the left.
   # so:
-  # - when left won't provide a match, the right never will either
+  # - when left won't provide a match, the right will never match either
   # - however, if the right won't match, the left might still match
 
   @doc """
@@ -520,43 +500,26 @@ defmodule Radix do
   """
   @spec lookup(tree, key) :: {key, value} | nil
   def lookup({0, _, _} = tree, key) when is_bitstring(key),
-    do: lpm(tree, key, bit_size(key))
+    do: lookup(tree, key, bit_size(key))
 
-  @spec lpm(tree | leaf, key, non_neg_integer) :: {key, value} | nil
-  defp lpm({b, l, r} = _tree, key, kmax) when b < kmax do
+  @spec lookup(tree | leaf, key, non_neg_integer) :: {key, value} | nil
+  defp lookup({b, l, r} = _tree, key, kmax) when b < kmax do
     <<_::size(b), bit::1, _::bitstring>> = key
 
     case bit do
-      0 -> lpm(l, key, kmax)
-      1 -> lpm(r, key, kmax) || lpm(l, key, kmax)
+      0 -> lookup(l, key, kmax)
+      1 -> lookup(r, key, kmax) || lookup(l, key, kmax)
     end
   end
 
-  defp lpm({_, l, _}, key, kmax),
-    do: lpm(l, key, kmax)
+  defp lookup({_, l, _}, key, kmax),
+    do: lookup(l, key, kmax)
 
-  defp lpm(nil, _key, _kmax),
+  defp lookup(nil, _key, _kmax),
     do: nil
 
-  defp lpm(leaf, key, kmax),
-    do: lpm_leaf(leaf, key, kmax)
-
-  # given a leaf and a key, return either {key, value} (longest match) or return nil
-  @spec lpm_leaf(leaf, key, non_neg_integer) :: {key, value} | nil
-  defp lpm_leaf([{k, _v} | tail], key, kmax) when bit_size(k) > kmax,
-    do: lpm_leaf(tail, key, kmax)
-
-  defp lpm_leaf([{k, v} | tail], key, kmax) do
-    len = bit_size(k)
-    <<key::bitstring-size(len), _::bitstring>> = key
-
-    case k == key do
-      true -> {k, v}
-      false -> lpm_leaf(tail, key, kmax)
-    end
-  end
-
-  defp lpm_leaf([], _key, _kmax), do: nil
+  defp lookup(leaf, key, kmax),
+    do: keylpm(leaf, key, kmax)
 
   @doc """
   Lookup given search `key` in `tree` and update the value of matched key with
@@ -570,21 +533,19 @@ defmodule Radix do
   ## Examples
 
       iex> t = new()
-      iex> t = lookup_update(t, <<1, 1, 1>>, 1, fn x -> x+1 end)
+      iex> t = update(t, <<1, 1, 1>>, 1, fn x -> x+1 end)
       iex> t
       {0, [{<<1, 1, 1>>, 1}], nil}
-      iex> t = lookup_update(t, <<1, 1, 1>>, 1, fn x -> x+1 end)
+      iex> t = update(t, <<1, 1, 1>>, 1, fn x -> x+1 end)
       iex> t
       {0, [{<<1, 1, 1>>, 2}], nil}
-      iex> t = lookup_update(t, <<1, 1, 1, 1>>, 1, fn x -> x+1 end)
+      iex> t = update(t, <<1, 1, 1, 1>>, 1, fn x -> x+1 end)
       iex> t
       {0, [{<<1, 1, 1>>, 3}], nil}
 
-
-
   """
-  @spec lookup_update(tree, key, value, (value -> value)) :: tree
-  def lookup_update({0, _, _} = tree, key, default, fun)
+  @spec update(tree, key, value, (value -> value)) :: tree
+  def update({0, _, _} = tree, key, default, fun)
       when is_bitstring(key) and is_function(fun, 1) do
     case lookup(tree, key) do
       nil -> put(tree, key, default)
@@ -593,16 +554,11 @@ defmodule Radix do
   end
 
   @doc """
-  Returns all key-value-pair(s) based on given search `key` and match `type`.
+  Returns all key-value-pair(s) whose key is a prefix for the given search `key`.
 
-  - `:more` finds all key,value-pairs where search `key` is a prefix of key in tree
-  - `:less` finds all key,value-pairs where key in tree is a prefix of the search `key`.
+  Collects key,value-entries where the stored key is the same or less specific.
 
-  The search type defaults to `:more` finding all key,value-pairs whose key matches the
-  search `key`.  Includes the search `key`,value-pair in the results if present
-  in the radix tree.
-
-  ## Examples
+  ## Example
 
       iex> elements = [
       ...>  {<<1, 1>>, 16},
@@ -611,74 +567,85 @@ defmodule Radix do
       ...>  {<<1, 1, 1, 1>>, 32}
       ...> ]
       iex> t = new(elements)
-      iex> search(t, <<1, 1, 0>>)
-      [{<<1, 1, 0, 0>>, 32}, {<<1, 1, 0>>, 24}]
-      #
-      iex> search(t, <<1, 1, 1>>)
-      [{<<1, 1, 1, 1>>, 32}]
-      #
-      iex> search(t, <<2>>)
-      []
-
-      iex> t = new()
-      ...>   |> put(<<1, 1>>, 16)
-      ...>   |> put(<<1, 1, 0>>, 24)
-      ...>   |> put(<<1, 1, 0, 0>>, 32)
-      ...>   |> put(<<1, 1, 1, 1>>, 32)
-      iex> search(t, <<1, 1, 1, 1>>, :less)
+      iex>
+      iex> less(t, <<1, 1, 1, 1>>)
       [{<<1, 1, 1, 1>>, 32}, {<<1, 1>>, 16}]
       #
-      iex> search(t, <<1, 1, 0>>, :less)
+      iex> less(t, <<1, 1, 0>>)
       [{<<1, 1, 0>>, 24}, {<<1, 1>>, 16}]
       #
-      iex> search(t, <<2, 2>>, :less)
+      iex> less(t, <<2, 2>>)
       []
 
   """
-  @spec search(tree, key, atom) :: [{key, value}]
-  def search(tree, key, type \\ :more)
-
-  def search({0, _, _} = tree, key, :more) when is_bitstring(key),
-    do: rpm(tree, key)
-
-  def search({0, _, _} = tree, key, :less) when is_bitstring(key),
-    do: apm(tree, key)
+  @spec less(tree, key) :: [{key, value}]
+  def less({0, _, _} = tree, key) when is_bitstring(key),
+    do: lessp(tree, key)
 
   # all prefix matches: search key is prefix of stored key(s)
-  @spec apm(tree | leaf, key) :: [{key, value}] | []
-  defp apm({b, l, r} = _tree, key) do
+  @spec lessp(tree | leaf, key) :: [{key, value}] | []
+  defp lessp({b, l, r} = _tree, key) do
     case bit(key, b) do
-      0 -> apm(l, key)
-      1 -> apm(r, key) ++ apm(l, key)
+      0 -> lessp(l, key)
+      1 -> lessp(r, key) ++ lessp(l, key)
     end
   end
 
-  defp apm(nil, _),
+  defp lessp(nil, _),
     do: []
 
-  defp apm(leaf, key),
-    do: Enum.filter(leaf, fn {k, _} -> is_prefix?(k, key) end)
+  defp lessp(leaf, key),
+    do: Enum.filter(leaf, fn {k, _} -> prefix?(k, key) end)
 
-  # all reverse prefix matches: stored key is prefix of search key
-  @spec rpm(tree | leaf, key) :: [{key, value}]
-  defp rpm({b, l, r} = _tree, key) when bit_size(key) < b do
-    rpm(r, key) ++ rpm(l, key)
+  @doc """
+  Returns all key-value-pair(s) where the given search `key` is a prefix for a stored key.
+
+  Collects key,value-entries where the stored key is the same or more specific.
+
+  ## Example
+
+      iex> elements = [
+      ...>  {<<1, 1>>, 16},
+      ...>  {<<1, 1, 0>>, 24},
+      ...>  {<<1, 1, 0, 0>>, 32},
+      ...>  {<<1, 1, 1, 1>>, 32}
+      ...> ]
+      iex> t = new(elements)
+      iex>
+      iex> more(t, <<1, 1, 0>>)
+      [{<<1, 1, 0, 0>>, 32}, {<<1, 1, 0>>, 24}]
+      #
+      iex> more(t, <<1, 1, 1>>)
+      [{<<1, 1, 1, 1>>, 32}]
+      #
+      iex> more(t, <<2>>)
+      []
+
+  """
+  @spec more(tree, key) :: [{key, value}]
+  def more({0, _, _} = tree, key) when is_bitstring(key),
+    do: morep(tree, key)
+
+  # reverse prefix match: stored key is prefix of search key
+  @spec morep(tree | leaf, key) :: [{key, value}]
+  defp morep({b, l, r} = _tree, key) when bit_size(key) < b do
+    morep(r, key) ++ morep(l, key)
   end
 
-  defp rpm({b, l, r}, key) do
+  defp morep({b, l, r}, key) do
     # when bit b is zero, right subtree might hold longer keys that have key as a prefix
-    # TODO: optimize; only call rpm(r,key) when bitpos b > bit_size(key)
+    # TODO: optimize; only call morep(r,key) when bitpos b > bit_size(key)
     case bit(key, b) do
-      0 -> rpm(l, key) ++ rpm(r, key)
-      1 -> rpm(r, key)
+      0 -> morep(l, key) ++ morep(r, key)
+      1 -> morep(r, key)
     end
   end
 
-  defp rpm(nil, _),
+  defp morep(nil, _),
     do: []
 
-  defp rpm(leaf, key),
-    do: Enum.filter(leaf, fn {k, _} -> is_prefix?(key, k) end)
+  defp morep(leaf, key),
+    do: Enum.filter(leaf, fn {k, _} -> prefix?(key, k) end)
 
   @doc """
   Invokes `fun` for each key,value-pair in the radix tree with the accumulator.

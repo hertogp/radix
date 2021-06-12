@@ -147,33 +147,6 @@ defmodule RadixTest do
     assert get(t, <<1, 1>>) == nil
   end
 
-  # Radix.update/4
-  test "update/4 creates or updates key,value-pair" do
-    t = new()
-    t = update(t, <<0, 0>>, 1, fn val -> val + 1 end)
-    assert get(t, <<0, 0>>) == {<<0, 0>>, 1}
-
-    t = update(t, <<0, 0>>, 1, fn val -> val + 1 end)
-    assert get(t, <<0, 0>>) == {<<0, 0>>, 2}
-  end
-
-  test "update/4 requires valid root, key and function/1" do
-    goodfun = fn x -> x + 1 end
-    badfun = fn x, y -> x + y + 1 end
-    # bad tree
-    Enum.each(@bad_trees, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> update(bad_tree, <<0>>, 1, goodfun) end
-    end)
-
-    tree = new()
-
-    Enum.each(@bad_keys, fn bad_key ->
-      assert_raise FunctionClauseError, fn -> update(tree, bad_key, 1, goodfun) end
-    end)
-
-    assert_raise FunctionClauseError, fn -> update(tree, <<0>>, 1, badfun) end
-  end
-
   # Radix.delete/2
   test "delete/2 uses exact match" do
     t =
@@ -371,9 +344,9 @@ defmodule RadixTest do
     assert lookup(t, <<0::7>>) == {<<>>, 1}
   end
 
-  # Radix.lookup_update
+  # Radix.update/3
 
-  test "lookup_update/4" do
+  test "update/3" do
     increment = fn x -> x + 1 end
 
     t =
@@ -388,45 +361,45 @@ defmodule RadixTest do
     assert lookup(t, <<>>) == nil
 
     # <<0>> not in tree yet, gets default value of 1
-    t = lookup_update(t, <<0>>, 1, increment)
+    t = update(t, <<0>>, 1, increment)
     assert get(t, <<0>>) == {<<0>>, 1}
 
     # <<>> not in tree yet, gets default value of 1
-    t = lookup_update(t, <<>>, 1, increment)
+    t = update(t, <<>>, 1, increment)
     assert get(t, <<>>) == {<<>>, 1}
     assert lookup(t, <<255>>) == {<<>>, 1}
 
     # these all exist and get incremented to 1
-    t = lookup_update(t, <<128, 128, 128>>, -1, increment)
+    t = update(t, <<128, 128, 128>>, -1, increment)
     assert get(t, <<128, 128, 128>>) == {<<128, 128, 128>>, 1}
 
-    t = lookup_update(t, <<128, 128, 128, 1::1>>, -1, increment)
+    t = update(t, <<128, 128, 128, 1::1>>, -1, increment)
     assert get(t, <<128, 128, 128, 1::1>>) == {<<128, 128, 128, 1::1>>, 1}
 
-    t = lookup_update(t, <<128, 128, 128, 2::2>>, -1, increment)
+    t = update(t, <<128, 128, 128, 2::2>>, -1, increment)
     assert get(t, <<128, 128, 128, 2::2>>) == {<<128, 128, 128, 2::2>>, 1}
   end
 
-  test "lookup_update/4 requires valid root, key and fun/1" do
+  test "update/4 requires valid root, key and fun/1" do
     goodfun = fn x -> x end
     badfun = fn x, y -> {x, y} end
 
     # bad tree
     Enum.each(@bad_trees, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> lookup_update(bad_tree, <<0>>, 1, goodfun) end
+      assert_raise FunctionClauseError, fn -> update(bad_tree, <<0>>, 1, goodfun) end
     end)
 
     Enum.each(@bad_keys, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> lookup_update(bad_tree, <<0>>, 1, goodfun) end
+      assert_raise FunctionClauseError, fn -> update(bad_tree, <<0>>, 1, goodfun) end
     end)
 
     tree = new()
 
-    assert_raise FunctionClauseError, fn -> lookup_update(tree, <<0>>, 1, badfun) end
+    assert_raise FunctionClauseError, fn -> update(tree, <<0>>, 1, badfun) end
   end
 
-  # Radix.search/3
-  test "search/3 - more specifics" do
+  # Radix.more/2
+  test "more/2 - more specifics" do
     t =
       new()
       |> put(<<255>>, 8)
@@ -434,107 +407,119 @@ defmodule RadixTest do
       |> put(<<255, 255, 1::1>>, 17)
       |> put(<<255, 255, 3::2>>, 18)
 
-    more = search(t, <<>>, :more)
+    more = more(t, <<>>)
     assert Enum.count(more) == 4
     assert {<<255>>, 8} in more
     assert {<<255, 255>>, 16} in more
     assert {<<255, 255, 1::1>>, 17} in more
     assert {<<255, 255, 3::2>>, 18} in more
 
-    more = search(t, <<255>>, :more)
+    more = more(t, <<255>>)
     assert Enum.count(more) == 4
     assert {<<255>>, 8} in more
     assert {<<255, 255>>, 16} in more
     assert {<<255, 255, 1::1>>, 17} in more
     assert {<<255, 255, 3::2>>, 18} in more
 
-    more = search(t, <<255, 255>>, :more)
+    more = more(t, <<255, 255>>)
     assert Enum.count(more) == 3
     assert {<<255, 255>>, 16} in more
     assert {<<255, 255, 1::1>>, 17} in more
     assert {<<255, 255, 3::2>>, 18} in more
 
-    more = search(t, <<255, 1::1>>, :more)
+    more = more(t, <<255, 1::1>>)
     assert Enum.count(more) == 3
     assert {<<255, 255>>, 16} in more
     assert {<<255, 255, 1::1>>, 17} in more
     assert {<<255, 255, 3::2>>, 18} in more
 
-    more = search(t, <<255, 255::7>>, :more)
+    more = more(t, <<255, 255::7>>)
     assert Enum.count(more) == 3
     assert {<<255, 255>>, 16} in more
     assert {<<255, 255, 1::1>>, 17} in more
     assert {<<255, 255, 3::2>>, 18} in more
 
-    more = search(t, <<255, 255, 1::1>>, :more)
+    more = more(t, <<255, 255, 1::1>>)
     assert Enum.count(more) == 2
     assert {<<255, 255, 1::1>>, 17} in more
     assert {<<255, 255, 3::2>>, 18} in more
 
-    more = search(t, <<255, 255, 3::2>>, :more)
+    more = more(t, <<255, 255, 3::2>>)
     assert Enum.count(more) == 1
     assert {<<255, 255, 3::2>>, 18} in more
 
     # keys without more specifics
-    assert search(t, <<254>>) == []
-    assert search(t, <<255, 0::1>>) == []
-    assert search(t, <<255, 255, 0::1>>) == []
+    assert more(t, <<254>>) == []
+    assert more(t, <<255, 0::1>>) == []
+    assert more(t, <<255, 255, 0::1>>) == []
   end
 
-  test "search/3 - less specifics" do
-    t =
-      new()
-      |> put(<<255>>, 8)
-      |> put(<<255, 255>>, 16)
-      |> put(<<255, 255, 1::1>>, 17)
-      |> put(<<255, 255, 3::2>>, 18)
-
-    less = search(t, <<255, 255, 255, 255>>, :less)
-    assert Enum.count(less) == 4
-    assert {<<255>>, 8} in less
-    assert {<<255, 255>>, 16} in less
-    assert {<<255, 255, 1::1>>, 17} in less
-    assert {<<255, 255, 3::2>>, 18} in less
-
-    less = search(t, <<255, 255, 3::2>>, :less)
-    assert Enum.count(less) == 4
-    assert {<<255>>, 8} in less
-    assert {<<255, 255>>, 16} in less
-    assert {<<255, 255, 1::1>>, 17} in less
-    assert {<<255, 255, 3::2>>, 18} in less
-
-    less = search(t, <<255, 255, 1::1>>, :less)
-    assert Enum.count(less) == 3
-    assert {<<255>>, 8} in less
-    assert {<<255, 255>>, 16} in less
-    assert {<<255, 255, 1::1>>, 17} in less
-
-    less = search(t, <<255, 255>>, :less)
-    assert Enum.count(less) == 2
-    assert {<<255>>, 8} in less
-    assert {<<255, 255>>, 16} in less
-
-    less = search(t, <<255>>, :less)
-    assert Enum.count(less) == 1
-    assert {<<255>>, 8} in less
-
-    # keys without less specifics
-    assert search(t, <<>>, :less) == []
-  end
-
-  test "search/3 requires valid tree and key" do
+  test "more/2 requires valid tree and key" do
     # bad tree
     Enum.each(@bad_trees, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> search(bad_tree, <<0>>, :more) end
+      assert_raise FunctionClauseError, fn -> more(bad_tree, <<0>>) end
     end)
 
     tree = new()
 
     Enum.each(@bad_keys, fn bad_key ->
-      assert_raise FunctionClauseError, fn -> search(tree, bad_key, :more) end
+      assert_raise FunctionClauseError, fn -> more(tree, bad_key) end
+    end)
+  end
+
+  # Radix.less/2
+  test "less/2 - less specifics" do
+    t =
+      new()
+      |> put(<<255>>, 8)
+      |> put(<<255, 255>>, 16)
+      |> put(<<255, 255, 1::1>>, 17)
+      |> put(<<255, 255, 3::2>>, 18)
+
+    less = less(t, <<255, 255, 255, 255>>)
+    assert Enum.count(less) == 4
+    assert {<<255>>, 8} in less
+    assert {<<255, 255>>, 16} in less
+    assert {<<255, 255, 1::1>>, 17} in less
+    assert {<<255, 255, 3::2>>, 18} in less
+
+    less = less(t, <<255, 255, 3::2>>)
+    assert Enum.count(less) == 4
+    assert {<<255>>, 8} in less
+    assert {<<255, 255>>, 16} in less
+    assert {<<255, 255, 1::1>>, 17} in less
+    assert {<<255, 255, 3::2>>, 18} in less
+
+    less = less(t, <<255, 255, 1::1>>)
+    assert Enum.count(less) == 3
+    assert {<<255>>, 8} in less
+    assert {<<255, 255>>, 16} in less
+    assert {<<255, 255, 1::1>>, 17} in less
+
+    less = less(t, <<255, 255>>)
+    assert Enum.count(less) == 2
+    assert {<<255>>, 8} in less
+    assert {<<255, 255>>, 16} in less
+
+    less = less(t, <<255>>)
+    assert Enum.count(less) == 1
+    assert {<<255>>, 8} in less
+
+    # keys without less specifics
+    assert less(t, <<>>) == []
+  end
+
+  test "less/2 requires valid tree and key" do
+    # bad tree
+    Enum.each(@bad_trees, fn bad_tree ->
+      assert_raise FunctionClauseError, fn -> less(bad_tree, <<0>>) end
     end)
 
-    assert_raise FunctionClauseError, fn -> search(tree, <<>>, :best) end
+    tree = new()
+
+    Enum.each(@bad_keys, fn bad_key ->
+      assert_raise FunctionClauseError, fn -> less(tree, bad_key) end
+    end)
   end
 
   # Radix.reduce/3
