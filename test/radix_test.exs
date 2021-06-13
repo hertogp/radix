@@ -645,8 +645,8 @@ defmodule RadixTest do
     end)
   end
 
-  # Radix.traverse/4
-  test "traverse/4 visits all nodes - in-order" do
+  # Radix.walk/4
+  test "walk/4 visits all nodes - in-order" do
     t =
       new()
       |> put(<<>>, 1)
@@ -660,7 +660,7 @@ defmodule RadixTest do
       acc, leaf -> [leaf | acc]
     end
 
-    nodes = traverse(t, [], f)
+    nodes = walk(t, [], f)
 
     assert nodes == [
              [{<<255>>, 2}],
@@ -671,7 +671,7 @@ defmodule RadixTest do
            ]
   end
 
-  test "traverse/4 visits all nodes - pre-order" do
+  test "walk/4 visits all nodes - pre-order" do
     t =
       new()
       |> put(<<>>, 1)
@@ -685,7 +685,7 @@ defmodule RadixTest do
       acc, leaf -> [leaf | acc]
     end
 
-    nodes = traverse(t, [], f, :preorder)
+    nodes = walk(t, [], f, :preorder)
 
     assert nodes == [
              [{<<255>>, 2}],
@@ -696,7 +696,7 @@ defmodule RadixTest do
            ]
   end
 
-  test "traverse/4 visits all nodes - post-order" do
+  test "walk/4 visits all nodes - post-order" do
     t =
       new()
       |> put(<<>>, 1)
@@ -710,7 +710,7 @@ defmodule RadixTest do
       acc, leaf -> [leaf | acc]
     end
 
-    nodes = traverse(t, [], f, :postorder)
+    nodes = walk(t, [], f, :postorder)
 
     assert nodes == [
              {0, "l", "r"},
@@ -721,11 +721,11 @@ defmodule RadixTest do
            ]
   end
 
-  test "traverse/3 requires tree's root node" do
+  test "walk/3 requires tree's root node" do
     f = fn x -> x end
 
     Enum.each(@bad_trees, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> traverse(bad_tree, f, []) end
+      assert_raise FunctionClauseError, fn -> walk(bad_tree, f, []) end
     end)
   end
 end

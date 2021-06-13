@@ -418,23 +418,23 @@ defmodule Radix do
   """
   @spec delete(tree, key) :: tree
   def delete({0, _, _} = tree, key) when is_bitstring(key),
-    do: delp(tree, key)
+    do: deletep(tree, key)
 
   # delete a {k,v}-pair from the tree
-  @spec delp(tree | leaf, key) :: tree | leaf
-  defp delp({bit, l, r}, key) do
+  @spec deletep(tree | leaf, key) :: tree | leaf
+  defp deletep({bit, l, r}, key) do
     case bit(key, bit) do
-      0 -> delp({bit, delp(l, key), r})
-      1 -> delp({bit, l, delp(r, key)})
+      0 -> deletep({bit, deletep(l, key), r})
+      1 -> deletep({bit, l, deletep(r, key)})
     end
   end
 
   # key wasn't in the tree
-  defp delp(nil, _key),
+  defp deletep(nil, _key),
     do: nil
 
   # key leads to leaf
-  defp delp(leaf, key) do
+  defp deletep(leaf, key) do
     case List.keydelete(leaf, key, 0) do
       [] -> nil
       leaf -> leaf
@@ -442,11 +442,11 @@ defmodule Radix do
   end
 
   # always keep the root, eliminate empty nodes and promote half-empty nodes
-  defp delp({0, l, r}), do: {0, l, r}
-  defp delp({_, nil, nil}), do: nil
-  defp delp({_, l, nil}), do: l
-  defp delp({_, nil, r}), do: r
-  defp delp({bit, l, r}), do: {bit, l, r}
+  defp deletep({0, l, r}), do: {0, l, r}
+  defp deletep({_, nil, nil}), do: nil
+  defp deletep({_, l, nil}), do: l
+  defp deletep({_, nil, r}), do: r
+  defp deletep({bit, l, r}), do: {bit, l, r}
 
   @doc """
   Drops the given `keys` from the radix `tree` using an exact match.
@@ -582,7 +582,6 @@ defmodule Radix do
   def less({0, _, _} = tree, key) when is_bitstring(key),
     do: lessp(tree, key)
 
-  # all prefix matches: search key is prefix of stored key(s)
   @spec lessp(tree | leaf, key) :: [{key, value}] | []
   defp lessp({b, l, r} = _tree, key) do
     case bit(key, b) do
@@ -634,7 +633,6 @@ defmodule Radix do
 
   defp morep({b, l, r}, key) do
     # when bit b is zero, right subtree might hold longer keys that have key as a prefix
-    # TODO: optimize; only call morep(r,key) when bitpos b > bit_size(key)
     case bit(key, b) do
       0 -> morep(l, key) ++ morep(r, key)
       1 -> morep(r, key)
@@ -778,35 +776,153 @@ defmodule Radix do
       ...>   (acc, leaf) -> acc ++ Enum.map(leaf, fn {_k, v} -> v end)
       ...> end
       iex>
-      iex> traverse(t, [], f)
+      iex> walk(t, [], f)
       [1, 2, 3, 128]
 
   """
-  @spec traverse(tree, acc, (acc, tree | leaf -> acc), atom) :: acc
-  def traverse({0, _, _} = tree, acc, fun, order \\ :inorder),
-    do: traversep(acc, fun, tree, order)
+  @spec walk(tree, acc, (acc, tree | leaf -> acc), atom) :: acc
+  def walk({0, _, _} = tree, acc, fun, order \\ :inorder),
+    do: walkp(acc, fun, tree, order)
 
-  defp traversep(acc, fun, {bit, l, r}, order) do
+  # internal node
+  defp walkp(acc, fun, {bit, l, r}, order) do
     case order do
       :inorder ->
         acc
-        |> traversep(fun, l, order)
+        |> walkp(fun, l, order)
         |> fun.({bit, l, r})
-        |> traversep(fun, r, order)
+        |> walkp(fun, r, order)
 
       :preorder ->
         acc
         |> fun.({bit, l, r})
-        |> traversep(fun, l, order)
-        |> traversep(fun, r, order)
+        |> walkp(fun, l, order)
+        |> walkp(fun, r, order)
 
       :postorder ->
         acc
-        |> traversep(fun, l, order)
-        |> traversep(fun, r, order)
+        |> walkp(fun, l, order)
+        |> walkp(fun, r, order)
         |> fun.({bit, l, r})
     end
   end
 
-  defp traversep(acc, fun, leaf, _order), do: fun.(acc, leaf)
+  # leaf node
+  defp walkp(acc, fun, leaf, _order),
+    do: fun.(acc, leaf)
+
+  def dot({0, _, _} = tree, opts \\ []) do
+    tree
+    |> annotate()
+    |> dotify(opts)
+  end
+
+  defp annotate({0, _, _} = tree) do
+    annotate(0, tree)
+  end
+
+  defp annotate(num, {b, l, r}) do
+    l = annotate(num, l)
+    r = annotate(elem(l, 0), r)
+    {elem(r, 0) + 1, {b, l, r}}
+  end
+
+  defp annotate(num, nil),
+    do: {num + 1, nil}
+
+  defp annotate(num, leaf),
+    do: {num + 1, leaf}
+
+  defp dotify(annotated, opts) do
+    label = Keyword.get(opts, :label, "radix")
+    labelloc = Keyword.get(opts, :labelloc, "t")
+    rankdir = Keyword.get(opts, :rankdir, "TB")
+    ranksep = Keyword.get(opts, :ranksep, "0.5 equally")
+
+    defs = dotify([], annotated, opts)
+
+    [
+      """
+      digraph Radix {
+        labelloc="#{labelloc}";
+        label="#{label}";
+        rankdir="#{rankdir}";
+        ranksep="#{ranksep}";
+      """
+      | [defs, "}"]
+    ]
+  end
+
+  defp dotify(acc, {n, {b, l, r}}, opts) do
+    acc
+    |> node(n, b, opts)
+    |> vertex(n, l, "L")
+    |> vertex(n, r, "R")
+    |> dotify(l, opts)
+    |> dotify(r, opts)
+  end
+
+  defp dotify(acc, {_n, nil}, _opts), do: acc
+  defp dotify(acc, {n, leaf}, opts), do: node(acc, n, leaf, opts)
+
+  defp vertex(acc, _parent, {_, nil}, _port), do: acc
+  defp vertex(acc, parent, {child, _}, port), do: ["N#{parent}:#{port} -> N#{child};\n" | acc]
+
+  defp node(acc, id, bit, opts) when is_integer(bit) do
+    bgcolor =
+      case bit do
+        0 -> Keyword.get(opts, :rootcolor, "orange")
+        _ -> Keyword.get(opts, :nodecolor, "yellow")
+      end
+
+    [
+      """
+      N#{id} [label=<
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+          <TR><TD PORT="N#{id}" COLSPAN="2" BGCOLOR="#{bgcolor}">bit #{bit}</TD></TR>
+          <TR><TD PORT=\"L\">0</TD><TD PORT=\"R\">1</TD></TR>
+        </TABLE>
+      >, shape="plaintext"];
+      """
+      | acc
+    ]
+  end
+
+  defp node(acc, _id, nil, _opts), do: acc
+
+  defp node(acc, id, leaf, opts) do
+    bgcolor = Keyword.get(opts, :leafcolor, "green")
+    kv_tostr = Keyword.get(opts, :kv_tostr, &kv_tostr/1)
+
+    items =
+      leaf
+      |> Enum.map(kv_tostr)
+      |> Enum.map(fn str -> "<TR><TD>#{str}</TD></TR>" end)
+
+    [
+      """
+      N#{id} [label=<
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+          <TR><TD PORT="N#{id}" BGCOLOR="#{bgcolor}">leaf</TD></TR>
+          #{Enum.join(items, "\n")}
+        </TABLE>
+        >, shape="plaintext"];
+      """
+      | acc
+    ]
+  end
+
+  defp kv_tostr({<<>>, _value}),
+    do: "0/0"
+
+  defp kv_tostr({key, _value}) when is_bitstring(key) do
+    pad =
+      case rem(bit_size(key), 8) do
+        0 -> 0
+        n -> 8 - n
+      end
+
+    bytes = for <<(x::8 <- <<key::bitstring, 0::size(pad)>>)>>, do: x
+    "#{Enum.join(bytes, ".")}/#{bit_size(key)}"
+  end
 end
