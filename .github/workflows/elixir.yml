@@ -9,16 +9,17 @@ on:
 env:
   MIX_ENV: test
 
+strategy:
+  matrix:
+     elixir: [1.11.0]
+     otp: [22.3.0]
+    
+
 jobs:
   build:
 
     name: Build and test
     runs-on: ubuntu-latest
-  strategy:
-     matrix:
-        elixir: [1.11.0]
-        otp: [22.3.0]
-    
     steps:
     - uses: actions/checkout@v2
     - name: Set up Elixir
