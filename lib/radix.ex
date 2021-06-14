@@ -1,7 +1,7 @@
 defmodule Radix do
   @moduledoc """
-  A path-compressed Patricia trie, with one-way branching removed and
-  bitstrings for keys.
+  A path-compressed Patricia trie, with one-way branching removed, that allows
+  to store any value under a bitstring key of any length.
 
   The radix tree (with r=2)  has 2 types of nodes:
   - *internal* `{bit, left, right}`, where `bit` >= 0
@@ -30,14 +30,28 @@ defmodule Radix do
   ## Examples
 
       iex> t = new()
-      ...>     |> put(<<1, 1, 1>>, "1.1.1.0/24")
+      ...>     |> put(<<1, 1, 1>>, "1.1.1/24")
       ...>     |> put(<<1, 1, 1, 0::6>>, "1.1.1.0/30")
+      ...>     |> put(<<1, 1, 1, 1::1>>, "1.1.1.128/25")
+      ...>     |> put(<<255>>, "255/8")
       iex>
       iex> lookup(t, <<1, 1, 1, 255>>)
-      {<<1, 1, 1>>, "1.1.1.0/24"}
+      {<<1, 1, 1, 1::1>>, "1.1.1.128/25"}
       #
       iex> lookup(t, <<1, 1, 1, 3>>)
       {<<1, 1, 1, 0::6>>, "1.1.1.0/30"}
+      #
+      iex> lookup(t, <<1, 1, 1, 100>>)
+      {<<1, 1, 1>>, "1.1.1/24"}
+      #
+      iex> lookup(t, <<255, 1, 1, 1>>)
+      {<<255>>, "255/8"}
+      #
+      iex> digraph = dot(t)
+      iex> File.write("doc/img/small.dot", digraph)
+      iex> System.cmd("dot", ["-O", "-Tpng", "doc/img/small.dot"])
+
+  ![Radix](img/small.dot.png)
 
   Regular binaries work too:
 
@@ -390,7 +404,7 @@ defmodule Radix do
         [{key, val} | leaf] |> List.keysort(0) |> Enum.reverse()
 
       :update ->
-        List.keyreplace(leaf, key, 0, {key, val})
+        :lists.keyreplace(key, 1, leaf, {key, val})
     end
   end
 
@@ -530,16 +544,16 @@ defmodule Radix do
   `key` cannot be matched the {`default`, `key`}-pair is inserted in
   the `tree`.
 
-  ## Examples
+  ## Example
 
       iex> t = new()
       iex> t = update(t, <<1, 1, 1>>, 1, fn x -> x+1 end)
       iex> t
       {0, [{<<1, 1, 1>>, 1}], nil}
-      iex> t = update(t, <<1, 1, 1>>, 1, fn x -> x+1 end)
+      iex> t = update(t, <<1, 1, 1, 0>>, 1, fn x -> x+1 end)
       iex> t
       {0, [{<<1, 1, 1>>, 2}], nil}
-      iex> t = update(t, <<1, 1, 1, 1>>, 1, fn x -> x+1 end)
+      iex> t = update(t, <<1, 1, 1, 255>>, 1, fn x -> x+1 end)
       iex> t
       {0, [{<<1, 1, 1>>, 3}], nil}
 
@@ -554,7 +568,7 @@ defmodule Radix do
   end
 
   @doc """
-  Returns all key-value-pair(s) whose key is a prefix for the given search `key`.
+  Returns all key,value-pair(s) whose key is a prefix for the given search `key`.
 
   Collects key,value-entries where the stored key is the same or less specific.
 
@@ -597,7 +611,7 @@ defmodule Radix do
     do: Enum.filter(leaf, fn {k, _} -> prefix?(k, key) end)
 
   @doc """
-  Returns all key-value-pair(s) where the given search `key` is a prefix for a stored key.
+  Returns all key,value-pair(s) where the given search `key` is a prefix for a stored key.
 
   Collects key,value-entries where the stored key is the same or more specific.
 
@@ -646,7 +660,7 @@ defmodule Radix do
     do: Enum.filter(leaf, fn {k, _} -> prefix?(key, k) end)
 
   @doc """
-  Invokes `fun` for each key,value-pair in the radix tree with the accumulator.
+  Invokes `fun` for each key,value-pair in the radix `tree` with the accumulator.
 
   The initial value of the accumulator is `acc`. The function is invoked for
   each key,value-pair in the radix tree with the accumulator in a depth-first
@@ -811,10 +825,57 @@ defmodule Radix do
   defp walkp(acc, fun, leaf, _order),
     do: fun.(acc, leaf)
 
+  @doc ~S"""
+  Given a tree, returns a list of lines describing the tree as a [graphviz](https://graphviz.org/) digraph.
+
+  Options include:
+  - `:label`, defaults to "radix")
+  - `:labelloc`, defaults to "t"
+  - `:rankdir`, defaults to "TB"
+  - `:ranksep`, defaults to "0.5 equally"
+  - `:rootcolor`, defaults to "organge"
+  - `:nodecolor`, defaults to "yellow"
+  - `:leafcolor`, defaults to "green"
+  - `:kv_tostr`, defaults to an internal function that converts key to dotted decimal string (cidr style)
+
+  If supplied via `:kv_tostr`, the function's signature must be ({`t:key/0`, `t:value/0`}) ::> `t:String.t/0`
+  and where the resulting string must be HTML-escaped.  See [html-entities](https://graphviz.org/doc/char.html).
+
+  Works best for smaller trees.
+
+  ## Example
+
+      iex> t = new()
+      ...> |> put(<<0, 0>>, "left")
+      ...> |> put(<<1, 1, 1::1>>, "left")
+      ...> |> put(<<128, 0>>, "right")
+      iex> graph = dot(t, label: "example")
+      ["digraph Radix {\n  labelloc=\"t\";\n  label=\"example\";\n  rankdir=\"TB\";\n  ranksep=\"0.5 equally\";\n",
+        "N4 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N4\" BGCOLOR=\"green\">leaf</TD></TR>\n    <TR><TD>128.0/16</TD></TR>\n  </TABLE>\n  >, shape=\"plaintext\"];\n",
+        "N2 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N2\" BGCOLOR=\"green\">leaf</TD></TR>\n    <TR><TD>1.1.128/17</TD></TR>\n  </TABLE>\n  >, shape=\"plaintext\"];\n",
+        "N1 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N1\" BGCOLOR=\"green\">leaf</TD></TR>\n    <TR><TD>0.0/16</TD></TR>\n  </TABLE>\n  >, shape=\"plaintext\"];\n",
+        "N3:R -> N2;\n",
+        "N3:L -> N1;\n",
+        "N3 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N3\" COLSPAN=\"2\" BGCOLOR=\"yellow\">bit 7</TD></TR>\n    <TR><TD PORT=\"L\">0</TD><TD PORT=\"R\">1</TD></TR>\n  </TABLE>\n>, shape=\"plaintext\"];\n",
+        "N5:R -> N4;\n",
+        "N5:L -> N3;\n",
+        "N5 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N5\" COLSPAN=\"2\" BGCOLOR=\"orange\">bit 0</TD></TR>\n    <TR><TD PORT=\"L\">0</TD><TD PORT=\"R\">1</TD></TR>\n  </TABLE>\n>, shape=\"plaintext\"];\n",
+        "}"]
+      iex>
+      iex> File.write("doc/img/example.dot", graph)
+      iex> System.cmd("dot", ["-O", "-Tpng", "doc/img/example.dot"])
+
+   which yields the following image:
+
+   ![example](img/example.dot.png)
+
+  """
+  @spec dot(tree, keyword()) :: list(String.t())
   def dot({0, _, _} = tree, opts \\ []) do
     tree
     |> annotate()
     |> dotify(opts)
+    |> List.flatten()
   end
 
   defp annotate({0, _, _} = tree) do
