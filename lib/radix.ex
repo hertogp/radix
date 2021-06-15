@@ -46,14 +46,13 @@ defmodule Radix do
       #
       iex> lookup(t, <<255, 1, 1, 1>>)
       {<<255>>, "255/8"}
-      #
-      iex> digraph = dot(t)
-      iex> File.write("doc/img/small.dot", digraph)
-      iex> System.cmd("dot", ["-O", "-Tpng", "doc/img/small.dot"])
 
+
+  After saving the `graph` to a file and running `dot -O -Tpng file.dot` on it, it shows
+  the tree above as:
   ![Radix](img/small.dot.png)
 
-  Regular binaries work too:
+  Since binaries are bitstrings too, they work as well:
 
       iex> t = new([{"A.new", "new"}, {"A.newer", "newer"}, {"B.newest", "newest"}])
       iex> more(t, "A.") |> Enum.reverse()
@@ -849,7 +848,7 @@ defmodule Radix do
       ...> |> put(<<0, 0>>, "left")
       ...> |> put(<<1, 1, 1::1>>, "left")
       ...> |> put(<<128, 0>>, "right")
-      iex> graph = dot(t, label: "example")
+      iex> dot(t, label: "example")
       ["digraph Radix {\n  labelloc=\"t\";\n  label=\"example\";\n  rankdir=\"TB\";\n  ranksep=\"0.5 equally\";\n",
         "N4 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N4\" BGCOLOR=\"green\">leaf</TD></TR>\n    <TR><TD>128.0/16</TD></TR>\n  </TABLE>\n  >, shape=\"plaintext\"];\n",
         "N2 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N2\" BGCOLOR=\"green\">leaf</TD></TR>\n    <TR><TD>1.1.128/17</TD></TR>\n  </TABLE>\n  >, shape=\"plaintext\"];\n",
@@ -862,8 +861,6 @@ defmodule Radix do
         "N5 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N5\" COLSPAN=\"2\" BGCOLOR=\"orange\">bit 0</TD></TR>\n    <TR><TD PORT=\"L\">0</TD><TD PORT=\"R\">1</TD></TR>\n  </TABLE>\n>, shape=\"plaintext\"];\n",
         "}"]
       iex>
-      iex> File.write("doc/img/example.dot", graph)
-      iex> System.cmd("dot", ["-O", "-Tpng", "doc/img/example.dot"])
 
    which yields the following image:
 
