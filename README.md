@@ -1,5 +1,7 @@
 # README
 
+![radix test](https://github.com/hertogp/radix/actions/workflows/elixir.yml/badge.svg)
+
 A path-compressed Patricia trie with one-way branching removed.
 
 - stores `{k,v}`-pairs, where `k` is a bitstring
