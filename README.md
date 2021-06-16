@@ -33,12 +33,12 @@ match.
     iex> lookup(t, <<1, 1, 1, 100>>)
     {<<1, 1, 1>>, "1.1.1/24"}
     iex>
-    iex> # more specific matches
+    iex> # more specific matches (includes search key if present)
     iex>
     iex> more(t, <<1, 1, 1>>)
     [{<<1, 1, 1, 0::size(6)>>, "1.1.1.0/30"}, {<<1, 1, 1>>, "1.1.1/24"}, {<<1, 1, 1, 1::size(1)>>, "1.1.1.128/25"}]
     iex>
-    iex> # A less specific matches
+    iex> # less specific matches (includes search key if present)
     iex>
     iex> less(t, <<1, 1, 1, 3>>)
     [{<<1, 1, 1, 0::size(6)>>, "1.1.1.0/30"}, {<<1, 1, 1>>, "1.1.1/24"}]
