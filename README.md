@@ -2,55 +2,65 @@
 
 ![radix test](https://github.com/hertogp/radix/actions/workflows/elixir.yml/badge.svg)
 
-A path-compressed Patricia trie with one-way branching removed.
+<!-- @MODULEDOC -->
 
-- stores `{k,v}`-pairs, where `k` is a bitstring
-- returns the `{k,v}`-pair, not just the value
-- supports longest prefix matching, and
-- tree traversals
+A bitwise radix tree to store any value under a bitstring key of arbitrary length.
 
-## Example
+Radix provides a [radix tree](https://en.wikipedia.org/wiki/Radix_tree), whose
+radius is 2, has path-compression and no one-way branching: i.e. a patricia
+trie.
 
-```elixir
-t = new([{<<1,1,1>>, "1.1.1.0/24"}, {<<1,1,1,0::1>>, "1.1.1.0/25"])
+Entries consist of {key, value}-pairs whose insertion/deletion is always
+based on an exact key-match, while retrieval functions are based on a prefix
+match.
 
-# longest prefix match:
+## Examples
 
-lpm(t, <<1,1,1,0>>)     #-> {<<1,1,1,0::1>>, "1.1.1.0/25"}
-lpm(t, <<1,1,1,128>>)   #-> {<<1,1,1>>, "1.1.1.0/24"}
+    iex> t = new()
+    ...>     |> put(<<1, 1, 1>>, "1.1.1/24")
+    ...>     |> put(<<1, 1, 1, 0::6>>, "1.1.1.0/30")
+    ...>     |> put(<<1, 1, 1, 1::1>>, "1.1.1.128/25")
+    ...>     |> put(<<255>>, "255/8")
+    iex>
+    iex> # Longest prefix match
+    iex>
+    iex> lookup(t, <<1, 1, 1, 255>>)
+    {<<1, 1, 1, 1::1>>, "1.1.1.128/25"}
+    iex>
+    iex> lookup(t, <<1, 1, 1, 3>>)
+    {<<1, 1, 1, 0::6>>, "1.1.1.0/30"}
+    iex>
+    iex> lookup(t, <<1, 1, 1, 100>>)
+    {<<1, 1, 1>>, "1.1.1/24"}
+    iex>
+    iex> # more specific matches
+    iex>
+    iex> more(t, <<1, 1, 1>>)
+    [{<<1, 1, 1, 0::size(6)>>, "1.1.1.0/30"}, {<<1, 1, 1>>, "1.1.1/24"}, {<<1, 1, 1, 1::size(1)>>, "1.1.1.128/25"}]
+    iex>
+    iex> # A less specific matches
+    iex>
+    iex> less(t, <<1, 1, 1, 3>>)
+    [{<<1, 1, 1, 0::size(6)>>, "1.1.1.0/30"}, {<<1, 1, 1>>, "1.1.1/24"}]
 
-# all prefix matches:
 
-apm(t, <<1,1,1,0>>)     #-> [{<<1, 1, 1, 0::size(1)>>, "1.1.1.0/25"}, {<<1, 1, 1>>, "1.1.1.0/24"}]
+The radix tree above looks something like this:
 
-# all reverse prefix matches (i.e. where search key is prefix of a stored key)
+![Radix](img/small.dot.png)
 
-rpm(t, <<1,1,1>>)       #-> [{<<1, 1, 1, 0::size(1)>>, "1.1.1.0/25"}, {<<1, 1, 1>>, "1.1.1.0/24"}]
+Since binaries are bitstrings too, they work as well:
 
-# turn the tree into a list
+    iex> t = new([{"A.new", "new"}, {"A.newer", "newer"}, {"B.newest", "newest"}])
+    iex> more(t, "A.") |> Enum.reverse()
+    [{"A.new", "new"}, {"A.newer", "newer"}]
+    #
+    iex> lookup(t, "A.newest")
+    {"A.new", "new"}
+    #
+    iex> more(t, "C.")
+    []
 
-to_list(t)              #-> [{<<1, 1, 1, 0::size(1)>>, "1.1.1.0/25"}, {<<1, 1, 1>>, "1.1.1.0/24"}]
-
-# traverse the tree and apply a function to each node, where a node can be:
-# 1) an internal node,
-# 2) nil, or
-# 3) a leaf
-
-fun = fn
-  (acc, {_bit, _left, _right}) -> acc
-  (acc, nil) -> acc
-  (acc, leaf) -> Enum.map(leaf, fn {_k, v} -> v end) ++ acc
-end
-
-traverse(t, fun, [], :inorder)     #-> ["1.1.1.0/25", "1.1.1.0/24"]
-
-# or just run a function on all {k,v}-pairs in the tree
-
-fun = fn {_k, v}, acc -> [v | acc] end
-
-exec(t, fun, []) |> Enum.reverse() #-> ["1.1.1.0/25", "1.1.1.0/24"]
-```
-
+<!-- @MODULEDOC -->
 
 
 ## Installation

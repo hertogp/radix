@@ -1,70 +1,9 @@
 defmodule Radix do
-  @moduledoc """
-  A path-compressed Patricia trie, with one-way branching removed, that allows
-  to store any value under a bitstring key of any length.
+  @external_resource "README.md"
 
-  The radix tree (with r=2)  has 2 types of nodes:
-  - *internal* `{bit, left, right}`, where `bit` >= 0
-  - *leaf*     `[{key,value} ..]`
-
-  where:
-  - `bit` is the bit position to check in a key
-  - `left` contains a subtree with keys whose `bit` is 0
-  - `right` contains a subtree with keys whose `bit` is 1
-  - `key` is a bitstring
-  - `value` can be anything
-
-  An `internal` node speficies a `bit` position to check in the search key to
-  decide whether the traversal proceeds with its `left` or `right` subtree.
-
-  A `leaf` stores key,value-pairs in a list sorted in descending order of
-  key-length and all keys in a leaf have the other, shorter keys as their
-  prefix.
-
-  The keys stored below any given `internal` node or in a `leaf` node, all
-  agree on the bits checked to arrive at that particular node.
-  Path-compression means not all bits in a key are checked while traversing the
-  tree, only those that differentiate between keys stored below the current
-  `internal` node.  So a final match is needed to ensure a correct match.
-
-  ## Examples
-
-      iex> t = new()
-      ...>     |> put(<<1, 1, 1>>, "1.1.1/24")
-      ...>     |> put(<<1, 1, 1, 0::6>>, "1.1.1.0/30")
-      ...>     |> put(<<1, 1, 1, 1::1>>, "1.1.1.128/25")
-      ...>     |> put(<<255>>, "255/8")
-      iex>
-      iex> lookup(t, <<1, 1, 1, 255>>)
-      {<<1, 1, 1, 1::1>>, "1.1.1.128/25"}
-      #
-      iex> lookup(t, <<1, 1, 1, 3>>)
-      {<<1, 1, 1, 0::6>>, "1.1.1.0/30"}
-      #
-      iex> lookup(t, <<1, 1, 1, 100>>)
-      {<<1, 1, 1>>, "1.1.1/24"}
-      #
-      iex> lookup(t, <<255, 1, 1, 1>>)
-      {<<255>>, "255/8"}
-
-
-  After saving the `graph` to a file and running `dot -O -Tpng file.dot` on it, it shows
-  the tree above as:
-  ![Radix](img/small.dot.png)
-
-  Since binaries are bitstrings too, they work as well:
-
-      iex> t = new([{"A.new", "new"}, {"A.newer", "newer"}, {"B.newest", "newest"}])
-      iex> more(t, "A.") |> Enum.reverse()
-      [{"A.new", "new"}, {"A.newer", "newer"}]
-      #
-      iex> lookup(t, "A.newest")
-      {"A.new", "new"}
-      #
-      iex> more(t, "C.")
-      []
-
-  """
+  @moduledoc File.read!("README.md")
+             |> String.split("<!-- @MODULEDOC -->")
+             |> Enum.fetch!(1)
 
   @typedoc """
   A user supplied accumulator.
@@ -76,11 +15,17 @@ defmodule Radix do
 
   @typedoc """
   Any value to be stored in the radix tree.
+
   """
   @type value :: any()
 
   @typedoc """
   A bitstring used as a key to index into the radix tree.
+
+  During tree traversals, bit positions in the key are checked in order
+  to decide whether to go left (0) or right (1).  During these checks, bits
+  beyond the current key's length always evaluate to 0.
+
   """
   @type key :: bitstring()
 
@@ -88,14 +33,32 @@ defmodule Radix do
   A radix leaf node.
 
   A leaf is either nil or a list of key,value-pairs sorted on key-length in
-  descending order.
+  descending order.  All keys in a leaf have the other, shorter keys, as
+  their prefix.
 
   """
 
   @type leaf :: [{key, value}] | nil
 
   @typedoc """
-  A radix tree node.
+  An internal radix tree node.
+
+  An internal node is a three element tuple: {`bit`, `left`, `right`}, where:
+  - `bit` is the bit position to check in a key
+  - `left` is a subtree with keys whose `bit` is 0
+  - `right` is a subtree with keys whose `bit` is 1
+
+  The keys stored below any given `internal` node, all agree on the bits
+  checked to arrive at that particular node.
+
+  Branches in the tree are only created when storing a new key,value-pair
+  in the tree whose key does not agree with the leaf found during traversal.
+
+  This path-compression means not all bits in a key are checked while
+  traversing the tree, only those which differentiate the keys stored below the
+  current `internal` node.  Hence, a final match is needed to ensure a correct
+  match.
+
   """
   @type tree :: {non_neg_integer, tree | leaf, tree | leaf}
 
