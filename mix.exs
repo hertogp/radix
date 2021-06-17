@@ -10,7 +10,7 @@ defmodule Radix.MixProject do
       version: @version,
       elixir: "~> 1.11",
       name: "Radix",
-      description: "A path-compressed Patricia trie with one-way branching removed",
+      description: "A bitwise radix tree that stores any value under a bitstring key",
       deps: deps(),
       docs: docs(),
       package: package(),
@@ -55,10 +55,10 @@ defmodule Radix.MixProject do
   defp cp_images(_) do
     # github image links: ![name](doc/img/a.png) - relative to root
     # hex image links:    ![name](img/a.png)     - relative to root/doc
-    # by copying the ./doc/img/*.png to ./img/ the links will work
-    # on both hex.pm as well as github.  Copies dot-files as well since
-    # supplying a image?(x,y) func to check if x doesn't end with dot, didnt
-    # really seem to work...?
+    # - generate images in root/img, then
+    # - process all dot files into images, and lastly
+    # - copy root/img to root/doc/img.
+    # The repo will only track the root/img and nothing inside root/doc
     File.mkdir_p!("doc/img")
 
     Path.wildcard("img/*.dot")
