@@ -60,6 +60,10 @@ defmodule Radix.MixProject do
     # supplying a image?(x,y) func to check if x doesn't end with dot, didnt
     # really seem to work...?
     File.mkdir_p!("img")
+
+    Path.wildcard("doc/img/*.dot")
+    |> Enum.map(fn file -> System.cmd("dot", ["-O", "-Tpng", file]) end)
+
     File.cp_r!("doc/img/", "img/")
   end
 end
