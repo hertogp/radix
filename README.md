@@ -2,6 +2,9 @@
 
 ![radix test](https://github.com/hertogp/radix/actions/workflows/elixir.yml/badge.svg)
 
+
+[Online Radix Documentation](https://hexdocs.pm/radix).
+
 <!-- @MODULEDOC -->
 
 A bitwise radix tree to store any value under a bitstring key of arbitrary length.

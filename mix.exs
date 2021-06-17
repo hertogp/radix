@@ -53,13 +53,17 @@ defmodule Radix.MixProject do
   end
 
   defp cp_images(_) do
-    # the repo does not track `/doc/` or any subdirectories.  Github
-    # links work if documenitation links to images like `![xx](img/a.png)`
+    # the repo doesn't track `/doc/` or any of its subdirectories.  Github
+    # links work if documentation links to images like `![xx](img/a.png)`
     #
     # While on hex.pm, image links are taken to be relative to the repo's
-    # root/doc directory (which is untracked btw).  Hence, the img/*.dot
-    # file are processed into img/*.png files, after which the img/*.png
-    # files are copied to doc/img/*.png so everybode is happy!
+    # root/doc directory.  Hence, the img/*.dot files are processed into
+    # img/*.png files, after which the img/*.png files are copied to
+    # doc/img/*.png so everybody is happy.
+    #
+    # Also note, that doing it this way (img/*.png -> doc/img/*.png) keeps
+    # the CI from failing, since the doc/img dir does not exist so doctests
+    # that simply try to write to e.g. doc/img/a.png will fail.
 
     # ensure the (untracked) doc/img directory for hex.pm
     Path.join("doc", "img")
