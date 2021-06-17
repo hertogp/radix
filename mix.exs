@@ -52,22 +52,14 @@ defmodule Radix.MixProject do
     ]
   end
 
-  defp image?(x, y) do
-    if String.ends_with?(x, ".dot") do
-      IO.puts("Skipping #{x} -> #{y}")
-      false
-    else
-      IO.puts("Copying #{x} -> #{y}")
-      true
-    end
-  end
-
   defp cp_images(_) do
     # github image links: ![name](doc/img/a.png) - relative to root
     # hex image links:    ![name](img/a.png)     - relative to root/doc
-    # by copying the ./doc/img/*.png to ./img/ the hex links
-    # will also work on github.
+    # by copying the ./doc/img/*.png to ./img/ the links will work
+    # on both hex.pm as well as github.  Copies dot-files as well since
+    # supplying a image?(x,y) func to check if x doesn't end with dot, didnt
+    # really seem to work...?
     File.mkdir_p!("img")
-    File.cp_r!("doc/img/", "img/", &image?/2)
+    File.cp_r!("doc/img/", "img/")
   end
 end
