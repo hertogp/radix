@@ -53,17 +53,25 @@ defmodule Radix.MixProject do
   end
 
   defp cp_images(_) do
-    # github image links: ![name](doc/img/a.png) - relative to root
-    # hex image links:    ![name](img/a.png)     - relative to root/doc
-    # - generate images in root/img, then
-    # - process all dot files into images, and lastly
-    # - copy root/img to root/doc/img.
-    # The repo will only track the root/img and nothing inside root/doc
-    File.mkdir_p!("doc/img")
+    # the repo does not track `/doc/` or any subdirectories.  Github
+    # links work if documenitation links to images like `![xx](img/a.png)`
+    #
+    # While on hex.pm, image links are taken to be relative to the repo's
+    # root/doc directory (which is untracked btw).  Hence, the img/*.dot
+    # file are processed into img/*.png files, after which the img/*.png
+    # files are copied to doc/img/*.png so everybode is happy!
 
+    # ensure the (untracked) doc/img directory for hex.pm
+    Path.join("doc", "img")
+    |> File.mkdir_p!()
+
+    # process all img/*.dot files into img/*.dot.png image files
     Path.wildcard("img/*.dot")
     |> Enum.map(fn file -> System.cmd("dot", ["-O", "-Tpng", file]) end)
 
-    File.cp_r!("img/", "doc/img/")
+    # copy img/*.png to doc/img/*.png
+    Path.wildcard("img/*.png")
+    |> Enum.map(fn src -> {src, Path.join("doc", src)} end)
+    |> Enum.map(fn {src, dst} -> File.cp!(src, dst) end)
   end
 end
