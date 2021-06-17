@@ -53,12 +53,12 @@ defmodule Radix.MixProject do
   end
 
   defp image?(x, y) do
-    if String.ends_with?(x, ".png") do
-      IO.puts("Copying #{x} -> #{y}")
-      true
-    else
+    if String.ends_with?(x, ".dot") do
       IO.puts("Skipping #{x} -> #{y}")
       false
+    else
+      IO.puts("Copying #{x} -> #{y}")
+      true
     end
   end
 
@@ -68,6 +68,6 @@ defmodule Radix.MixProject do
     # by copying the ./doc/img/*.png to ./img/ the hex links
     # will also work on github.
     File.mkdir_p!("img")
-    File.cp_r!("doc/img/", "img", &image?/2)
+    File.cp_r!("doc/img/", "img/", &image?/2)
   end
 end

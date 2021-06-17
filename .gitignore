@@ -8,6 +8,7 @@
 /deps/
 
 # Where third-party dependencies like ExDoc output generated docs.
+/doc/
 # !/doc/
 # /doc/*
 # !/doc/img/
