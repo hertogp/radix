@@ -59,11 +59,11 @@ defmodule Radix.MixProject do
     # on both hex.pm as well as github.  Copies dot-files as well since
     # supplying a image?(x,y) func to check if x doesn't end with dot, didnt
     # really seem to work...?
-    File.mkdir_p!("img")
+    File.mkdir_p!("doc/img")
 
-    Path.wildcard("doc/img/*.dot")
+    Path.wildcard("img/*.dot")
     |> Enum.map(fn file -> System.cmd("dot", ["-O", "-Tpng", file]) end)
 
-    File.cp_r!("doc/img/", "img/")
+    File.cp_r!("img/", "doc/img/")
   end
 end

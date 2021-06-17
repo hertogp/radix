@@ -823,7 +823,7 @@ defmodule Radix do
         "N5:L -> N3;\n",
         "N5 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N5\" COLSPAN=\"2\" BGCOLOR=\"orange\">bit 0</TD></TR>\n    <TR><TD PORT=\"L\">0</TD><TD PORT=\"R\">1</TD></TR>\n  </TABLE>\n>, shape=\"plaintext\"];\n",
         "}"]
-      iex> File.write("doc/img/example.dot", g)
+      iex> File.write("img/example.dot", g)
       :ok
 
    which yields the following image:
