@@ -42,6 +42,8 @@ match.
     iex>
     iex> less(t, <<1, 1, 1, 3>>)
     [{<<1, 1, 1, 0::size(6)>>, "1.1.1.0/30"}, {<<1, 1, 1>>, "1.1.1/24"}]
+    iex> dot(t) |> (&File.write.("img/readme.dot", &1)).()
+
 
 
 The radix tree above looks something like this:
