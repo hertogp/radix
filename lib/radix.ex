@@ -1,3 +1,49 @@
+defmodule RadixError do
+  defexception [:reason]
+
+  @moduledoc """
+  RadixError provides information on error conditions that may occur.
+
+  These include:
+  - :badtree, when a valid radix root node was expected,
+  - :badkey, when a valid radix key (bitstring) was expected, and
+  - :badlist, when a list of {key,value}-pairs was expected
+
+  """
+
+  @typedoc """
+  An exception struct whose `reason` field contains a tuple with an error_id
+  and the offending data.
+
+  """
+  @type t :: %__MODULE__{reason: {atom(), any()}}
+
+  def exception(reason),
+    do: %__MODULE__{reason: reason}
+
+  def message(%__MODULE__{reason: reason}),
+    do: format(reason)
+
+  defp format({:badroot, tree}),
+    do: "badtree: expected a radix tree root node {0, _, _}, got #{inspect(tree, limit: 3)}"
+
+  defp format({:badleaf, tree}),
+    do: "badtree: expected a radix leaf node [{k,v},..], got #{inspect(tree, limit: 3)}"
+
+  defp format({:badnode, node}),
+    do: "badtree: expected a valid radix node, got #{inspect(node, limit: 3)}"
+
+  defp format({:badkey, key}),
+    do: "badkey: expected a bitstring, got #{inspect(key, limit: 3)}"
+
+  defp format({:badlist, list}),
+    do: "badlist: expected a list of {key, values}-pairs, got #{inspect(list, limit: 3)}"
+
+  # catch all in case a new `reason` tuple was missed here.
+  defp format(reason),
+    do: "unknown error, #{inspect(reason, limit: 3)}"
+end
+
 defmodule Radix do
   @external_resource "README.md"
 
@@ -65,6 +111,9 @@ defmodule Radix do
   @empty {0, nil, nil}
 
   # Helpers
+  #
+  defp error(reason, data),
+    do: RadixError.exception({reason, data})
 
   # bit
   # - extract the value of a bit in a key
@@ -126,20 +175,25 @@ defmodule Radix do
     k == key
   end
 
+  # Leaf helpers
   # given a leaf and a key, return either {key, value} (exact match) or nil
   # - k,v-pairs in a leaf are sorted from longer -> shorter keys
   @spec keyget(leaf, key, non_neg_integer) :: {key, value} | nil
   defp keyget([{k, v} | _tail], key, _kmax) when k == key,
     do: {k, v}
 
-  # stop checking once leaf keys are shorter than search key
+  # stop checking once leaf keys become shorter than search key
   defp keyget([{k, _v} | _tail], _key, kmax) when bit_size(k) < kmax,
     do: nil
 
   defp keyget([{_k, _v} | tail], key, kmax),
     do: keyget(tail, key, kmax)
 
-  defp keyget([], _key, _kmax), do: nil
+  defp keyget([], _key, _kmax),
+    do: nil
+
+  defp keyget(nil, _key, _max),
+    do: nil
 
   # get key's position (bitpos) in the tree
   # - if no leaf if found -> it's the last bit in the new key
@@ -215,6 +269,288 @@ defmodule Radix do
   defp keydiff(_key1, _key2, pos),
     do: pos
 
+  # Tree helpers
+
+  # delete a {k,v}-pair from the tree
+  @spec deletep(tree | leaf, key) :: tree | leaf
+  defp deletep({bit, l, r}, key) do
+    case bit(key, bit) do
+      0 -> deletep({bit, deletep(l, key), r})
+      1 -> deletep({bit, l, deletep(r, key)})
+    end
+  end
+
+  # key wasn't in the tree
+  defp deletep(nil, _key),
+    do: nil
+
+  # key leads to leaf
+  # -TODO: validate leaf here and RAISE an exception (otherwise the exception
+  # becomes part of the tree ...
+  # now Radix.delete({0, 1, 2}, <<1>>) yields FunctionClauseError for List.keydelete ..
+  defp deletep([{_, _} | _tail] = leaf, key) do
+    case List.keydelete(leaf, key, 0) do
+      [] -> nil
+      leaf -> leaf
+    end
+  end
+
+  # got a bad tree
+  defp deletep(tree, _key),
+    do: raise(error(:badnode, tree))
+
+  # always keep the root, eliminate empty nodes and promote half-empty nodes
+  defp deletep({0, l, r}), do: {0, l, r}
+  defp deletep({_, nil, nil}), do: nil
+  defp deletep({_, l, nil}), do: l
+  defp deletep({_, nil, r}), do: r
+  defp deletep({bit, l, r}), do: {bit, l, r}
+
+  @spec lessp(tree | leaf, key) :: [{key, value}] | []
+  defp lessp({b, l, r} = _tree, key) do
+    case bit(key, b) do
+      0 -> lessp(l, key)
+      1 -> lessp(r, key) ++ lessp(l, key)
+    end
+  end
+
+  defp lessp(nil, _),
+    do: []
+
+  defp lessp(leaf, key),
+    do: Enum.filter(leaf, fn {k, _} -> prefix?(k, key) end)
+
+  @spec lookupp(tree | leaf, key, non_neg_integer) :: {key, value} | nil
+  defp lookupp({b, l, r} = _tree, key, kmax) when b < kmax do
+    <<_::size(b), bit::1, _::bitstring>> = key
+
+    case bit do
+      0 -> lookupp(l, key, kmax)
+      1 -> lookupp(r, key, kmax) || lookupp(l, key, kmax)
+    end
+  end
+
+  defp lookupp({_, l, _}, key, kmax),
+    do: lookupp(l, key, kmax)
+
+  defp lookupp(nil, _key, _kmax),
+    do: nil
+
+  defp lookupp(leaf, key, kmax),
+    do: keylpm(leaf, key, kmax)
+
+  # reverse prefix match: stored key is prefix of search key
+  @spec morep(tree | leaf, key) :: [{key, value}]
+  defp morep({b, l, r} = _tree, key) when bit_size(key) < b do
+    morep(r, key) ++ morep(l, key)
+  end
+
+  defp morep({b, l, r}, key) do
+    # when bit b is zero, right subtree might hold longer keys that have key as a prefix
+    case bit(key, b) do
+      0 -> morep(l, key) ++ morep(r, key)
+      1 -> morep(r, key)
+    end
+  end
+
+  defp morep(nil, _),
+    do: []
+
+  defp morep(leaf, key),
+    do: Enum.filter(leaf, fn {k, _} -> prefix?(key, k) end)
+
+  # put
+  # - puts/updates a {key,value}-pair in the tree
+  # - pos is maximum depth to travel down the tree before splitting
+
+  # max depth exceeded, so split the tree here
+  @spec putp(tree | leaf, bitpos, key, value) :: tree | leaf
+  defp putp({bit, _left, _right} = node, pos, key, val) when pos < bit do
+    case bit(key, pos) do
+      0 -> {pos, [{key, val}], node}
+      1 -> {pos, node, [{key, val}]}
+    end
+  end
+
+  # put somewhere in the left/right subtree
+  defp putp({bit, l, r}, pos, key, val) do
+    case bit(key, bit) do
+      0 -> {bit, putp(l, pos, key, val), r}
+      1 -> {bit, l, putp(r, pos, key, val)}
+    end
+  end
+
+  # ran into a leaf
+  defp putp(leaf, pos, key, val) do
+    case action(leaf, key) do
+      :take ->
+        [{key, val}]
+
+      :split ->
+        # split tree, new key decides if it goes left or right
+        case bit(key, pos) do
+          0 -> {pos, [{key, val}], leaf}
+          1 -> {pos, leaf, [{key, val}]}
+        end
+
+      :add ->
+        [{key, val} | leaf] |> List.keysort(0) |> Enum.reverse()
+
+      :update ->
+        :lists.keyreplace(key, 1, leaf, {key, val})
+    end
+  end
+
+  @spec reducep(tree, acc, (key, value, acc -> acc)) :: acc
+  defp reducep(tree, acc, fun)
+  defp reducep(nil, acc, _fun), do: acc
+  defp reducep([], acc, _fun), do: acc
+  defp reducep({_, l, r}, acc, fun), do: reducep(r, reducep(l, acc, fun), fun)
+  defp reducep([{k, v} | tail], acc, fun), do: reducep(tail, fun.(k, v, acc), fun)
+
+  # internal node
+  defp walkp(acc, fun, {bit, l, r}, order) do
+    case order do
+      :inorder ->
+        acc
+        |> walkp(fun, l, order)
+        |> fun.({bit, l, r})
+        |> walkp(fun, r, order)
+
+      :preorder ->
+        acc
+        |> fun.({bit, l, r})
+        |> walkp(fun, l, order)
+        |> walkp(fun, r, order)
+
+      :postorder ->
+        acc
+        |> walkp(fun, l, order)
+        |> walkp(fun, r, order)
+        |> fun.({bit, l, r})
+    end
+  end
+
+  # leaf node
+  defp walkp(acc, fun, leaf, _order),
+    do: fun.(acc, leaf)
+
+  # DOT helpers
+
+  # annotate a tree with uniq numbers per node.  the result is no longer a
+  # radix tree since all nodes are turned into {n, org_node}.  This makes
+  # creating nodes and vertices much easier.
+  defp annotate({0, _, _} = tree) do
+    annotate(0, tree)
+  end
+
+  defp annotate(num, {b, l, r}) do
+    l = annotate(num, l)
+    r = annotate(elem(l, 0), r)
+    {elem(r, 0) + 1, {b, l, r}}
+  end
+
+  defp annotate(num, nil),
+    do: {num + 1, nil}
+
+  defp annotate(num, leaf),
+    do: {num + 1, leaf}
+
+  # turn an annotated tree in a list of strings, describing the radix tree
+  # as a digraph in the DOT-language (https://graphviz.org).
+  defp dotify(annotated, opts) do
+    label = Keyword.get(opts, :label, "radix")
+    labelloc = Keyword.get(opts, :labelloc, "t")
+    rankdir = Keyword.get(opts, :rankdir, "TB")
+    ranksep = Keyword.get(opts, :ranksep, "0.5 equally")
+
+    defs = dotify([], annotated, opts)
+
+    [
+      """
+      digraph Radix {
+        labelloc="#{labelloc}";
+        label="#{label}";
+        rankdir="#{rankdir}";
+        ranksep="#{ranksep}";
+      """
+      | [defs, "}"]
+    ]
+  end
+
+  defp dotify(acc, {n, {b, l, r}}, opts) do
+    acc
+    |> node(n, b, opts)
+    |> vertex(n, l, "L")
+    |> vertex(n, r, "R")
+    |> dotify(l, opts)
+    |> dotify(r, opts)
+  end
+
+  defp dotify(acc, {_n, nil}, _opts), do: acc
+  defp dotify(acc, {n, leaf}, opts), do: node(acc, n, leaf, opts)
+
+  defp vertex(acc, _parent, {_, nil}, _port), do: acc
+  defp vertex(acc, parent, {child, _}, port), do: ["N#{parent}:#{port} -> N#{child};\n" | acc]
+
+  defp node(acc, id, bit, opts) when is_integer(bit) do
+    bgcolor =
+      case bit do
+        0 -> Keyword.get(opts, :rootcolor, "orange")
+        _ -> Keyword.get(opts, :nodecolor, "yellow")
+      end
+
+    [
+      """
+      N#{id} [label=<
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+          <TR><TD PORT="N#{id}" COLSPAN="2" BGCOLOR="#{bgcolor}">bit #{bit}</TD></TR>
+          <TR><TD PORT=\"L\">0</TD><TD PORT=\"R\">1</TD></TR>
+        </TABLE>
+      >, shape="plaintext"];
+      """
+      | acc
+    ]
+  end
+
+  defp node(acc, _id, nil, _opts), do: acc
+
+  defp node(acc, id, leaf, opts) do
+    bgcolor = Keyword.get(opts, :leafcolor, "green")
+    kv_tostr = Keyword.get(opts, :kv_tostr, &kv_tostr/1)
+
+    items =
+      leaf
+      |> Enum.map(kv_tostr)
+      |> Enum.map(fn str -> "<TR><TD>#{str}</TD></TR>" end)
+
+    [
+      """
+      N#{id} [label=<
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+          <TR><TD PORT="N#{id}" BGCOLOR="#{bgcolor}">leaf</TD></TR>
+          #{Enum.join(items, "\n")}
+        </TABLE>
+        >, shape="plaintext"];
+      """
+      | acc
+    ]
+  end
+
+  defp kv_tostr({<<>>, _value}),
+    do: "0/0"
+
+  defp kv_tostr({key, _value}) when is_bitstring(key) do
+    pad =
+      case rem(bit_size(key), 8) do
+        0 -> 0
+        n -> 8 - n
+      end
+
+    bytes = for <<(x::8 <- <<key::bitstring, 0::size(pad)>>)>>, do: x
+    "#{Enum.join(bytes, ".")}/#{bit_size(key)}"
+  end
+
   # API
 
   @doc """
@@ -271,10 +607,9 @@ defmodule Radix do
   def get({0, _, _} = tree, key, default \\ nil) when is_bitstring(key) do
     kmax = bit_size(key)
 
-    case leaf(tree, key, kmax) do
-      nil -> default
-      leaf -> keyget(leaf, key, kmax) || default
-    end
+    tree
+    |> leaf(key, kmax)
+    |> keyget(key, kmax) || default
   end
 
   @doc """
@@ -294,10 +629,9 @@ defmodule Radix do
 
   """
   @spec put(tree, [{key, value}]) :: tree
-  def put({0, _, _} = tree, [{k, _} | _tail] = elements) when is_bitstring(k),
+  def put({0, _, _} = tree, [{_key, _value} | _tail] = elements),
     do: Enum.reduce(elements, tree, fn {k, v}, t -> put(t, k, v) end)
 
-  @spec put(tree, key, value) :: tree
   @doc """
   Store a {`key`,`value`}-pair in the radix `tree`.
 
@@ -322,53 +656,10 @@ defmodule Radix do
         nil
       }
 
-
   """
-  def put({0, _, _} = tree, key, value) when is_bitstring(key) do
-    put(tree, keypos(tree, key), key, value)
-  end
-
-  # put
-  # - puts/updates a {key,value}-pair in the tree
-  # - pos is maximum depth to travel down the tree before splitting
-
-  # max depth exceeded, so split the tree here
-  @spec put(tree | leaf, bitpos, key, value) :: tree | leaf
-  defp put({bit, _left, _right} = node, pos, key, val) when pos < bit do
-    case bit(key, pos) do
-      0 -> {pos, [{key, val}], node}
-      1 -> {pos, node, [{key, val}]}
-    end
-  end
-
-  # put somewhere in the left/right subtree
-  defp put({bit, l, r}, pos, key, val) do
-    case bit(key, bit) do
-      0 -> {bit, put(l, pos, key, val), r}
-      1 -> {bit, l, put(r, pos, key, val)}
-    end
-  end
-
-  # ran into a leaf
-  defp put(leaf, pos, key, val) do
-    case action(leaf, key) do
-      :take ->
-        [{key, val}]
-
-      :split ->
-        # split tree, new key decides if it goes left or right
-        case bit(key, pos) do
-          0 -> {pos, [{key, val}], leaf}
-          1 -> {pos, leaf, [{key, val}]}
-        end
-
-      :add ->
-        [{key, val} | leaf] |> List.keysort(0) |> Enum.reverse()
-
-      :update ->
-        :lists.keyreplace(key, 1, leaf, {key, val})
-    end
-  end
+  @spec put(tree, key, value) :: tree
+  def put({0, _, _} = tree, key, value) when is_bitstring(key),
+    do: putp(tree, keypos(tree, key), key, value)
 
   @doc """
   Delete the entry from the `tree` for a specific `key` using an exact match.
@@ -395,34 +686,6 @@ defmodule Radix do
   @spec delete(tree, key) :: tree
   def delete({0, _, _} = tree, key) when is_bitstring(key),
     do: deletep(tree, key)
-
-  # delete a {k,v}-pair from the tree
-  @spec deletep(tree | leaf, key) :: tree | leaf
-  defp deletep({bit, l, r}, key) do
-    case bit(key, bit) do
-      0 -> deletep({bit, deletep(l, key), r})
-      1 -> deletep({bit, l, deletep(r, key)})
-    end
-  end
-
-  # key wasn't in the tree
-  defp deletep(nil, _key),
-    do: nil
-
-  # key leads to leaf
-  defp deletep(leaf, key) do
-    case List.keydelete(leaf, key, 0) do
-      [] -> nil
-      leaf -> leaf
-    end
-  end
-
-  # always keep the root, eliminate empty nodes and promote half-empty nodes
-  defp deletep({0, l, r}), do: {0, l, r}
-  defp deletep({_, nil, nil}), do: nil
-  defp deletep({_, l, nil}), do: l
-  defp deletep({_, nil, r}), do: r
-  defp deletep({bit, l, r}), do: {bit, l, r}
 
   @doc """
   Drops the given `keys` from the radix `tree` using an exact match.
@@ -476,26 +739,7 @@ defmodule Radix do
   """
   @spec lookup(tree, key) :: {key, value} | nil
   def lookup({0, _, _} = tree, key) when is_bitstring(key),
-    do: lookup(tree, key, bit_size(key))
-
-  @spec lookup(tree | leaf, key, non_neg_integer) :: {key, value} | nil
-  defp lookup({b, l, r} = _tree, key, kmax) when b < kmax do
-    <<_::size(b), bit::1, _::bitstring>> = key
-
-    case bit do
-      0 -> lookup(l, key, kmax)
-      1 -> lookup(r, key, kmax) || lookup(l, key, kmax)
-    end
-  end
-
-  defp lookup({_, l, _}, key, kmax),
-    do: lookup(l, key, kmax)
-
-  defp lookup(nil, _key, _kmax),
-    do: nil
-
-  defp lookup(leaf, key, kmax),
-    do: keylpm(leaf, key, kmax)
+    do: lookupp(tree, key, bit_size(key))
 
   @doc """
   Lookup given search `key` in `tree` and update the value of matched key with
@@ -558,20 +802,6 @@ defmodule Radix do
   def less({0, _, _} = tree, key) when is_bitstring(key),
     do: lessp(tree, key)
 
-  @spec lessp(tree | leaf, key) :: [{key, value}] | []
-  defp lessp({b, l, r} = _tree, key) do
-    case bit(key, b) do
-      0 -> lessp(l, key)
-      1 -> lessp(r, key) ++ lessp(l, key)
-    end
-  end
-
-  defp lessp(nil, _),
-    do: []
-
-  defp lessp(leaf, key),
-    do: Enum.filter(leaf, fn {k, _} -> prefix?(k, key) end)
-
   @doc """
   Returns all key,value-pair(s) where the given search `key` is a prefix for a stored key.
 
@@ -600,26 +830,6 @@ defmodule Radix do
   @spec more(tree, key) :: [{key, value}]
   def more({0, _, _} = tree, key) when is_bitstring(key),
     do: morep(tree, key)
-
-  # reverse prefix match: stored key is prefix of search key
-  @spec morep(tree | leaf, key) :: [{key, value}]
-  defp morep({b, l, r} = _tree, key) when bit_size(key) < b do
-    morep(r, key) ++ morep(l, key)
-  end
-
-  defp morep({b, l, r}, key) do
-    # when bit b is zero, right subtree might hold longer keys that have key as a prefix
-    case bit(key, b) do
-      0 -> morep(l, key) ++ morep(r, key)
-      1 -> morep(r, key)
-    end
-  end
-
-  defp morep(nil, _),
-    do: []
-
-  defp morep(leaf, key),
-    do: Enum.filter(leaf, fn {k, _} -> prefix?(key, k) end)
 
   @doc """
   Invokes `fun` for each key,value-pair in the radix `tree` with the accumulator.
@@ -650,13 +860,6 @@ defmodule Radix do
   @spec reduce(tree, acc, (key, value, acc -> acc)) :: acc
   def reduce({0, _, _} = tree, acc, fun) when is_function(fun, 3),
     do: reducep(tree, acc, fun)
-
-  @spec reducep(tree, acc, (key, value, acc -> acc)) :: acc
-  defp reducep(tree, acc, fun)
-  defp reducep(nil, acc, _fun), do: acc
-  defp reducep([], acc, _fun), do: acc
-  defp reducep({_, l, r}, acc, fun), do: reducep(r, reducep(l, acc, fun), fun)
-  defp reducep([{k, v} | tail], acc, fun), do: reducep(tail, fun.(k, v, acc), fun)
 
   @doc """
   Return all key,value-pairs as a flat list.
@@ -760,33 +963,6 @@ defmodule Radix do
   def walk({0, _, _} = tree, acc, fun, order \\ :inorder),
     do: walkp(acc, fun, tree, order)
 
-  # internal node
-  defp walkp(acc, fun, {bit, l, r}, order) do
-    case order do
-      :inorder ->
-        acc
-        |> walkp(fun, l, order)
-        |> fun.({bit, l, r})
-        |> walkp(fun, r, order)
-
-      :preorder ->
-        acc
-        |> fun.({bit, l, r})
-        |> walkp(fun, l, order)
-        |> walkp(fun, r, order)
-
-      :postorder ->
-        acc
-        |> walkp(fun, l, order)
-        |> walkp(fun, r, order)
-        |> fun.({bit, l, r})
-    end
-  end
-
-  # leaf node
-  defp walkp(acc, fun, leaf, _order),
-    do: fun.(acc, leaf)
-
   @doc ~S"""
   Given a tree, returns a list of lines describing the tree as a [graphviz](https://graphviz.org/) digraph.
 
@@ -837,114 +1013,5 @@ defmodule Radix do
     |> annotate()
     |> dotify(opts)
     |> List.flatten()
-  end
-
-  defp annotate({0, _, _} = tree) do
-    annotate(0, tree)
-  end
-
-  defp annotate(num, {b, l, r}) do
-    l = annotate(num, l)
-    r = annotate(elem(l, 0), r)
-    {elem(r, 0) + 1, {b, l, r}}
-  end
-
-  defp annotate(num, nil),
-    do: {num + 1, nil}
-
-  defp annotate(num, leaf),
-    do: {num + 1, leaf}
-
-  defp dotify(annotated, opts) do
-    label = Keyword.get(opts, :label, "radix")
-    labelloc = Keyword.get(opts, :labelloc, "t")
-    rankdir = Keyword.get(opts, :rankdir, "TB")
-    ranksep = Keyword.get(opts, :ranksep, "0.5 equally")
-
-    defs = dotify([], annotated, opts)
-
-    [
-      """
-      digraph Radix {
-        labelloc="#{labelloc}";
-        label="#{label}";
-        rankdir="#{rankdir}";
-        ranksep="#{ranksep}";
-      """
-      | [defs, "}"]
-    ]
-  end
-
-  defp dotify(acc, {n, {b, l, r}}, opts) do
-    acc
-    |> node(n, b, opts)
-    |> vertex(n, l, "L")
-    |> vertex(n, r, "R")
-    |> dotify(l, opts)
-    |> dotify(r, opts)
-  end
-
-  defp dotify(acc, {_n, nil}, _opts), do: acc
-  defp dotify(acc, {n, leaf}, opts), do: node(acc, n, leaf, opts)
-
-  defp vertex(acc, _parent, {_, nil}, _port), do: acc
-  defp vertex(acc, parent, {child, _}, port), do: ["N#{parent}:#{port} -> N#{child};\n" | acc]
-
-  defp node(acc, id, bit, opts) when is_integer(bit) do
-    bgcolor =
-      case bit do
-        0 -> Keyword.get(opts, :rootcolor, "orange")
-        _ -> Keyword.get(opts, :nodecolor, "yellow")
-      end
-
-    [
-      """
-      N#{id} [label=<
-        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
-          <TR><TD PORT="N#{id}" COLSPAN="2" BGCOLOR="#{bgcolor}">bit #{bit}</TD></TR>
-          <TR><TD PORT=\"L\">0</TD><TD PORT=\"R\">1</TD></TR>
-        </TABLE>
-      >, shape="plaintext"];
-      """
-      | acc
-    ]
-  end
-
-  defp node(acc, _id, nil, _opts), do: acc
-
-  defp node(acc, id, leaf, opts) do
-    bgcolor = Keyword.get(opts, :leafcolor, "green")
-    kv_tostr = Keyword.get(opts, :kv_tostr, &kv_tostr/1)
-
-    items =
-      leaf
-      |> Enum.map(kv_tostr)
-      |> Enum.map(fn str -> "<TR><TD>#{str}</TD></TR>" end)
-
-    [
-      """
-      N#{id} [label=<
-        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
-          <TR><TD PORT="N#{id}" BGCOLOR="#{bgcolor}">leaf</TD></TR>
-          #{Enum.join(items, "\n")}
-        </TABLE>
-        >, shape="plaintext"];
-      """
-      | acc
-    ]
-  end
-
-  defp kv_tostr({<<>>, _value}),
-    do: "0/0"
-
-  defp kv_tostr({key, _value}) when is_bitstring(key) do
-    pad =
-      case rem(bit_size(key), 8) do
-        0 -> 0
-        n -> 8 - n
-      end
-
-    bytes = for <<(x::8 <- <<key::bitstring, 0::size(pad)>>)>>, do: x
-    "#{Enum.join(bytes, ".")}/#{bit_size(key)}"
   end
 end
