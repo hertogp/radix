@@ -668,6 +668,7 @@ defmodule Radix do
       iex>
       iex> fetch!(t, <<2>>)
       ** (KeyError) key not found <<0b10>>
+
   """
   def fetch!(tree, key) do
     case get(tree, key) do
