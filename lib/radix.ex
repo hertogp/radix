@@ -1,11 +1,11 @@
 defmodule RadixError do
-  defexception [:reason]
+  defexception [:reason, :data]
 
   @moduledoc """
   RadixError provides information on error conditions that may occur.
 
   These include:
-  - :badtree, when a valid radix root node was expected,
+  - :badroot, when a valid radix root node was expected,
   - :badkey, when a valid radix key (bitstring) was expected, and
   - :badlist, when a list of {key,value}-pairs was expected
 
@@ -16,32 +16,39 @@ defmodule RadixError do
   and the offending data.
 
   """
-  @type t :: %__MODULE__{reason: {atom(), any()}}
+  @type t :: %__MODULE__{reason: atom(), data: any()}
 
-  def exception(reason),
-    do: %__MODULE__{reason: reason}
+  # inspect(data) might fill the screen if e.g. the tree is large, so limit the
+  # amount of data provided by inspect.
+  @limit 3
 
-  def message(%__MODULE__{reason: reason}),
-    do: format(reason)
+  def exception(reason, data),
+    do: %__MODULE__{reason: reason, data: data}
 
-  defp format({:badroot, tree}),
-    do: "badtree: expected a radix tree root node {0, _, _}, got #{inspect(tree, limit: 3)}"
+  def message(%__MODULE__{reason: reason, data: data}),
+    do: format(reason, data)
 
-  defp format({:badleaf, tree}),
-    do: "badtree: expected a radix leaf node [{k,v},..], got #{inspect(tree, limit: 3)}"
+  def hint(data, opts \\ []),
+    do: "#{inspect(data, Keyword.put(opts, :limit, @limit))}"
 
-  defp format({:badnode, node}),
-    do: "badtree: expected a valid radix node, got #{inspect(node, limit: 3)}"
+  defp format(:badroot, data),
+    do: "expected a radix tree root node {0, _, _}, got #{hint(data)}"
 
-  defp format({:badkey, key}),
-    do: "badkey: expected a bitstring, got #{inspect(key, limit: 3)}"
+  defp format(:badleaf, data),
+    do: "expected a radix leaf node [{k,v},..], got #{hint(data)}"
 
-  defp format({:badlist, list}),
-    do: "badlist: expected a list of {key, values}-pairs, got #{inspect(list, limit: 3)}"
+  defp format(:badnode, data),
+    do: "expected a valid radix node, got #{hint(data)}"
 
-  # catch all in case a new `reason` tuple was missed here.
-  defp format(reason),
-    do: "unknown error, #{inspect(reason, limit: 3)}"
+  defp format(:badkey, data),
+    do: "expected a bitstring, got #{hint(data, base: :binary)}"
+
+  defp format(:badlist, data),
+    do: "badlist: expected a list of {key, values}-pairs, got #{hint(data)}"
+
+  # catch all in case some `reason`, `data` was missed here.
+  defp format(reason, data),
+    do: "unknown error, #{reason}, #{hint(data)}"
 end
 
 defmodule Radix do
@@ -112,8 +119,30 @@ defmodule Radix do
 
   # Helpers
   #
+
+  # consistent ArgumentError's
+  def bad_tree(arg),
+    do: ArgumentError.exception("expected a radix tree root node, got #{inspect(arg, limit: 3)}")
+
+  def bad_key(arg),
+    do:
+      ArgumentError.exception("expected a radix key (bitstring), got: #{inspect(arg, limit: 3)}")
+
+  def bad_keys(arg),
+    do:
+      ArgumentError.exception(
+        "expected a list of radix keys (bitstring), got: #{inspect(arg, limit: 3)}"
+      )
+
+  def bad_list(arg),
+    do: ArgumentError.exception("expected a list of {key,value}-pairs, got #{inspect(arg)}")
+
+  def bad_fun(arg, arity),
+    do: ArgumentError.exception("expected a function with arity #{arity}, got #{inspect(arg)}")
+
+  # a RadixError is raised for corrupt nodes or bad keys in a list
   defp error(reason, data),
-    do: RadixError.exception({reason, data})
+    do: RadixError.exception(reason, data)
 
   # bit
   # - extract the value of a bit in a key
@@ -195,6 +224,9 @@ defmodule Radix do
   defp keyget(nil, _key, _max),
     do: nil
 
+  defp keyget(leaf, _key, _kmax),
+    do: raise(error(:badleaf, leaf))
+
   # get key's position (bitpos) in the tree
   # - if no leaf if found -> it's the last bit in the new key
   # - if a leaf is found
@@ -229,10 +261,10 @@ defmodule Radix do
 
   # given a leaf and a key, return either {key, value} (longest match) or nil
   @spec keylpm(leaf, key, non_neg_integer) :: {key, value} | nil
-  defp keylpm([{k, _v} | tail], key, kmax) when bit_size(k) > kmax,
+  defp keylpm([{k, _v} | tail], key, kmax) when is_bitstring(k) and bit_size(k) > kmax,
     do: keylpm(tail, key, kmax)
 
-  defp keylpm([{k, v} | tail], key, kmax) do
+  defp keylpm([{k, v} | tail], key, kmax) when is_bitstring(k) do
     len = bit_size(k)
     <<key::bitstring-size(len), _::bitstring>> = key
 
@@ -242,15 +274,18 @@ defmodule Radix do
     end
   end
 
-  defp keylpm([], _key, _kmax), do: nil
+  defp keylpm([], _key, _kmax),
+    do: nil
 
-  # differ
+  defp keylpm(leaf, _key, _kmax),
+    do: raise(error(:badleaf, leaf))
+
+  # keydiff
   # - find the first bit where two keys differ
-  # - for two equal keys, the last bit's position is returned.
-  # - returns the last bitpos if one key is a shorter prefix of the other
-  #   in which case they both should belong to the same leaf.
-  # - the bit position is used to determine where a k,v-pair is stored in the tree
+  # - but for two *equal* keys, the last bit's position is returned.
+  # - if one key is a prefix for the other, returns the last bitpos of shorter key
   # - for a leaf, only need to check the first/longest key
+  # - the bit position is used to determine if/when to branch the tree during put
 
   @spec keydiff(leaf, key) :: bitpos
   defp keydiff([{k, _v} | _tail], key),
@@ -580,37 +615,69 @@ defmodule Radix do
       }
   """
   @spec new([{key, value}]) :: tree
-  def new([{key, _} | _tail] = elements) when is_bitstring(key),
-    do: Enum.reduce(elements, @empty, fn {k, v}, t -> put(t, k, v) end)
+  def new(elements) when is_list(elements) do
+    try do
+      Enum.reduce(elements, @empty, fn {k, v}, t when is_bitstring(k) -> put(t, k, v) end)
+    rescue
+      FunctionClauseError -> raise bad_list(elements)
+    end
+  end
+
+  def new(elements),
+    do: raise(bad_list(elements))
+
+  @spec fetch(tree, key) :: {:ok, {key, value}} | :error
+  def fetch(tree, key) do
+    case get(tree, key) do
+      {k, v} -> {:ok, {k, v}}
+      _ -> :error
+    end
+  end
+
+  def fetch!(tree, key) do
+    case get(tree, key) do
+      {k, v} -> {k, v}
+      nil -> raise KeyError, "key not found #{inspect(key, base: :binary)}"
+    end
+  end
 
   @doc """
   Get the key,value-pair whose key equals the given search `key`.
 
-  If `key` is not present in the radix tree, `default` is returned.
+  If `key` is not a bitstring or not present in the radix tree, `default` is
+  returned. If `default` is not provided, `nil` is used.
 
 
   ## Example
 
       iex> elements = [{<<1, 1>>, 16}, {<<1, 1, 1>>, 24}, {<<1, 1, 1, 1>>, 32}]
-      iex> ipt = new(elements)
-      iex> get(ipt, <<1, 1, 1>>)
+      iex> t = new(elements)
+      iex> get(t, <<1, 1, 1>>)
       {<<1, 1, 1>>, 24}
-      iex> get(ipt, <<1, 1>>)
+      iex> get(t, <<1, 1>>)
       {<<1, 1>>, 16}
-      iex> get(ipt, <<1, 1, 0::1>>)
+      iex> get(t, <<1, 1, 0::1>>)
       nil
-      iex> get(ipt, <<1, 1, 0::1>>, "oops")
+      iex> get(t, <<1, 1, 0::1>>, "oops")
       "oops"
 
   """
   @spec get(tree, key, any) :: {key, value} | any
-  def get({0, _, _} = tree, key, default \\ nil) when is_bitstring(key) do
+  def get(tree, key, default \\ nil)
+
+  def get({0, _, _} = tree, key, default) when is_bitstring(key) do
     kmax = bit_size(key)
 
     tree
     |> leaf(key, kmax)
     |> keyget(key, kmax) || default
   end
+
+  def get(tree, key, _default) when is_bitstring(key),
+    do: raise(bad_tree(tree))
+
+  def get(_tree, key, _default),
+    do: raise(bad_key(key))
 
   @doc """
   Stores {`key`, `value`}-pairs in the radix `tree`.
@@ -629,8 +696,19 @@ defmodule Radix do
 
   """
   @spec put(tree, [{key, value}]) :: tree
-  def put({0, _, _} = tree, [{_key, _value} | _tail] = elements),
-    do: Enum.reduce(elements, tree, fn {k, v}, t -> put(t, k, v) end)
+  def put({0, _, _} = tree, elements) when is_list(elements) do
+    try do
+      Enum.reduce(elements, tree, fn {k, v}, t when is_bitstring(k) -> put(t, k, v) end)
+    rescue
+      FunctionClauseError -> raise bad_list(elements)
+    end
+  end
+
+  def put(tree, elements) when is_list(elements),
+    do: raise(bad_tree(tree))
+
+  def put(_tree, elements),
+    do: raise(bad_list(elements))
 
   @doc """
   Store a {`key`,`value`}-pair in the radix `tree`.
@@ -661,6 +739,12 @@ defmodule Radix do
   def put({0, _, _} = tree, key, value) when is_bitstring(key),
     do: putp(tree, keypos(tree, key), key, value)
 
+  def put(tree, key, _value) when is_bitstring(key),
+    do: raise(bad_tree(tree))
+
+  def put(_tree, key, _value),
+    do: raise(bad_key(key))
+
   @doc """
   Delete the entry from the `tree` for a specific `key` using an exact match.
 
@@ -687,6 +771,12 @@ defmodule Radix do
   def delete({0, _, _} = tree, key) when is_bitstring(key),
     do: deletep(tree, key)
 
+  def delete(tree, key) when is_bitstring(key),
+    do: raise(bad_tree(tree))
+
+  def delete(_tree, key),
+    do: raise(bad_key(key))
+
   @doc """
   Drops the given `keys` from the radix `tree` using an exact match.
 
@@ -707,8 +797,19 @@ defmodule Radix do
 
   """
   @spec drop(tree, [key]) :: tree
-  def drop({0, _, _} = tree, keys) when is_list(keys),
-    do: Enum.reduce(keys, tree, fn key, tree -> delete(tree, key) end)
+  def drop({0, _, _} = tree, keys) when is_list(keys) do
+    try do
+      Enum.reduce(keys, tree, fn key, tree when is_bitstring(key) -> delete(tree, key) end)
+    rescue
+      FunctionClauseError -> raise bad_keys(keys)
+    end
+  end
+
+  def drop(tree, keys) when is_list(keys),
+    do: raise(bad_tree(tree))
+
+  def drop(_tree, keys),
+    do: raise(bad_list(keys))
 
   # get the longest prefix match for binary key
   # - follow tree path using key and get longest match from the leaf found
@@ -740,6 +841,12 @@ defmodule Radix do
   @spec lookup(tree, key) :: {key, value} | nil
   def lookup({0, _, _} = tree, key) when is_bitstring(key),
     do: lookupp(tree, key, bit_size(key))
+
+  def lookup(tree, key) when is_bitstring(key),
+    do: raise(bad_tree(tree))
+
+  def lookup(_tree, key),
+    do: raise(bad_key(key))
 
   @doc """
   Lookup given search `key` in `tree` and update the value of matched key with
@@ -773,6 +880,15 @@ defmodule Radix do
     end
   end
 
+  def update(tree, key, _default, fun) when is_bitstring(key) and is_function(fun, 1),
+    do: raise(bad_tree(tree))
+
+  def update(_tree, key, _val, fun) when is_bitstring(key),
+    do: raise(bad_fun(fun, 1))
+
+  def update(_tree, key, _default, _fun),
+    do: raise(bad_key(key))
+
   @doc """
   Returns all key,value-pair(s) whose key is a prefix for the given search `key`.
 
@@ -802,6 +918,12 @@ defmodule Radix do
   def less({0, _, _} = tree, key) when is_bitstring(key),
     do: lessp(tree, key)
 
+  def less(tree, key) when is_bitstring(key),
+    do: raise(bad_tree(tree))
+
+  def less(_tree, key),
+    do: raise(bad_key(key))
+
   @doc """
   Returns all key,value-pair(s) where the given search `key` is a prefix for a stored key.
 
@@ -830,6 +952,12 @@ defmodule Radix do
   @spec more(tree, key) :: [{key, value}]
   def more({0, _, _} = tree, key) when is_bitstring(key),
     do: morep(tree, key)
+
+  def more(tree, key) when is_bitstring(key),
+    do: raise(bad_tree(tree))
+
+  def more(_tree, key),
+    do: raise(bad_key(key))
 
   @doc """
   Invokes `fun` for each key,value-pair in the radix `tree` with the accumulator.
@@ -861,6 +989,12 @@ defmodule Radix do
   def reduce({0, _, _} = tree, acc, fun) when is_function(fun, 3),
     do: reducep(tree, acc, fun)
 
+  def reduce(tree, _acc, fun) when is_function(fun, 3),
+    do: raise(bad_tree(tree))
+
+  def reduce(_tree, _acc, fun),
+    do: raise(bad_fun(fun, 3))
+
   @doc """
   Return all key,value-pairs as a flat list.
 
@@ -889,6 +1023,9 @@ defmodule Radix do
     |> Enum.reverse()
   end
 
+  def to_list(tree),
+    do: raise(bad_tree(tree))
+
   @doc """
   Returns all keys from the radix `tree`.
 
@@ -910,6 +1047,9 @@ defmodule Radix do
     |> reducep([], fn k, _v, acc -> [k | acc] end)
     |> Enum.reverse()
   end
+
+  def keys(tree),
+    do: raise(bad_tree(tree))
 
   @doc """
   Returns all values from the radix `tree`.
@@ -934,6 +1074,9 @@ defmodule Radix do
     |> reducep([], fn _k, v, acc -> [v | acc] end)
     |> Enum.reverse()
   end
+
+  def values(tree),
+    do: raise(bad_tree(tree))
 
   @doc """
   Invokes `fun` on all (internal and leaf) nodes of the radix `tree` using either
@@ -960,8 +1103,16 @@ defmodule Radix do
 
   """
   @spec walk(tree, acc, (acc, tree | leaf -> acc), atom) :: acc
-  def walk({0, _, _} = tree, acc, fun, order \\ :inorder),
+  def walk(tree, acc, fun, order \\ :inorder)
+
+  def walk({0, _, _} = tree, acc, fun, order) when is_function(fun, 2),
     do: walkp(acc, fun, tree, order)
+
+  def walk(tree, _acc, fun, _order) when is_function(fun, 2),
+    do: raise(bad_tree(tree))
+
+  def walk(_tree, _acc, fun, _order),
+    do: raise(bad_fun(fun, 2))
 
   @doc ~S"""
   Given a tree, returns a list of lines describing the tree as a [graphviz](https://graphviz.org/) digraph.
@@ -1002,16 +1153,21 @@ defmodule Radix do
       iex> File.write("img/example.dot", g)
       :ok
 
-   which yields the following image:
+   which, after converting with `dot`, yields the following image:
 
    ![example](img/example.dot.png)
 
   """
   @spec dot(tree, keyword()) :: list(String.t())
-  def dot({0, _, _} = tree, opts \\ []) do
+  def dot(tree, opts \\ [])
+
+  def dot({0, _, _} = tree, opts) do
     tree
     |> annotate()
     |> dotify(opts)
     |> List.flatten()
   end
+
+  def dot(tree, _opts),
+    do: raise(bad_tree(tree))
 end

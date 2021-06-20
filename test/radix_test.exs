@@ -6,6 +6,28 @@ defmodule RadixTest do
   @bad_trees [{}, {nil}, {nil, nil}, {nil, nil, nil}, {-1, nil, nil}, {2, nil, nil}]
   @bad_keys [nil, true, false, 0, '0', [], ["0"], {}, {"0"}, %{}, %{"0" => "0"}]
 
+  # list of {k,k}-entries, where k is 16 bits
+  @slash16kv for x <- 0..255, y <- 0..255, do: {<<x, y>>, <<x, y>>}
+
+  # RadixError
+
+  test "API functions require a valid radix root" do
+    key = <<0>>
+
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> fetch!(t, key) end)
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> get(t, key) end)
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> put(t, key, 0) end)
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> put(t, [{key, 0}]) end)
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> delete(t, key) end)
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> drop(t, [key]) end)
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> lookup(t, key) end)
+  end
+
+  test "API functions require a valid radix key" do
+    tree = {0, nil, nil}
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> lookup(tree, k) end)
+  end
+
   # Radix.new/0
   test "new, empty radix tree" do
     t = new()
@@ -76,18 +98,6 @@ defmodule RadixTest do
     assert get(t, <<128>>) == {<<128>>, 128}
   end
 
-  test "put requires valid tree and key" do
-    Enum.each(@bad_trees, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> put(bad_tree, <<0>>, 0) end
-    end)
-
-    tree = new()
-
-    Enum.each(@bad_keys, fn bad_key ->
-      assert_raise FunctionClauseError, fn -> put(tree, bad_key, 0) end
-    end)
-  end
-
   # Radix.get/2
   test "get/2 from empty tree yields nil" do
     t = new()
@@ -106,19 +116,6 @@ defmodule RadixTest do
     assert get(t, <<0>>) == nil
     assert get(t, <<1>>) == {<<1>>, 1}
     assert get(t, <<255>>) == nil
-  end
-
-  test "get/2 requires valid tree and key" do
-    # bad tree
-    Enum.each(@bad_trees, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> get(bad_tree, <<0>>) end
-    end)
-
-    tree = new()
-
-    Enum.each(@bad_keys, fn bad_key ->
-      assert_raise FunctionClauseError, fn -> get(tree, bad_key) end
-    end)
   end
 
   test "get/2 does an exact match only" do
@@ -178,19 +175,6 @@ defmodule RadixTest do
     assert t == {0, nil, nil}
   end
 
-  test "delete/2 requires valid root and key" do
-    # bad tree
-    Enum.each(@bad_trees, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> delete(bad_tree, <<0>>) end
-    end)
-
-    tree = new()
-
-    Enum.each(@bad_keys, fn bad_key ->
-      assert_raise FunctionClauseError, fn -> delete(tree, bad_key) end
-    end)
-  end
-
   # Radix.drop/2
   test "drop/2 ignores non-existing keys" do
     t =
@@ -210,21 +194,9 @@ defmodule RadixTest do
     assert t == {0, nil, nil}
   end
 
-  test "drop/2 requires valid root" do
-    # bad tree
-    Enum.each(@bad_trees, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> drop(bad_tree, <<0>>) end
-    end)
-
-    tree = new()
-
-    assert_raise FunctionClauseError, fn -> drop(tree, @bad_keys) end
-    assert_raise FunctionClauseError, fn -> drop(tree, [<<0>>, 23]) end
-    # keys must be a list
-    assert_raise FunctionClauseError, fn -> drop(tree, 23) end
-
-    # dropping no keys yields same tree
-    assert tree == drop(tree, [])
+  test "drop/2 dropping all keys yields empty tree" do
+    t = new(@slash16kv)
+    assert drop(t, keys(t)) == {0, nil, nil}
   end
 
   # Radix.lookup/2
@@ -288,19 +260,6 @@ defmodule RadixTest do
     assert lookup(t, <<255, 255>>) == {<<255, 255>>, "255.255.0.0/16"}
     assert lookup(t, <<255, 1>>) == {<<255>>, "255.0.0.0/8"}
     assert lookup(t, <<255::7>>) == nil
-  end
-
-  test "lookup/2 requires valid root and key" do
-    # bad tree
-    Enum.each(@bad_trees, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> lookup(bad_tree, <<0>>) end
-    end)
-
-    tree = new()
-
-    Enum.each(@bad_keys, fn bad_key ->
-      assert_raise FunctionClauseError, fn -> lookup(tree, bad_key) end
-    end)
   end
 
   test "lookup/2 yields default match when no key matches - 1" do
@@ -380,24 +339,6 @@ defmodule RadixTest do
     assert get(t, <<128, 128, 128, 2::2>>) == {<<128, 128, 128, 2::2>>, 1}
   end
 
-  test "update/4 requires valid root, key and fun/1" do
-    goodfun = fn x -> x end
-    badfun = fn x, y -> {x, y} end
-
-    # bad tree
-    Enum.each(@bad_trees, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> update(bad_tree, <<0>>, 1, goodfun) end
-    end)
-
-    Enum.each(@bad_keys, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> update(bad_tree, <<0>>, 1, goodfun) end
-    end)
-
-    tree = new()
-
-    assert_raise FunctionClauseError, fn -> update(tree, <<0>>, 1, badfun) end
-  end
-
   # Radix.more/2
   test "more/2 - more specifics" do
     t =
@@ -454,19 +395,6 @@ defmodule RadixTest do
     assert more(t, <<255, 255, 0::1>>) == []
   end
 
-  test "more/2 requires valid tree and key" do
-    # bad tree
-    Enum.each(@bad_trees, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> more(bad_tree, <<0>>) end
-    end)
-
-    tree = new()
-
-    Enum.each(@bad_keys, fn bad_key ->
-      assert_raise FunctionClauseError, fn -> more(tree, bad_key) end
-    end)
-  end
-
   # Radix.less/2
   test "less/2 - less specifics" do
     t =
@@ -509,19 +437,6 @@ defmodule RadixTest do
     assert less(t, <<>>) == []
   end
 
-  test "less/2 requires valid tree and key" do
-    # bad tree
-    Enum.each(@bad_trees, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> less(bad_tree, <<0>>) end
-    end)
-
-    tree = new()
-
-    Enum.each(@bad_keys, fn bad_key ->
-      assert_raise FunctionClauseError, fn -> less(tree, bad_key) end
-    end)
-  end
-
   # Radix.reduce/3
   test "reduce/3 visits all k,v-pairs" do
     t =
@@ -544,12 +459,6 @@ defmodule RadixTest do
     assert reduce(t, 0, fun) == Enum.sum(1..12)
   end
 
-  test "reduce/3 requires the tree's root node" do
-    Enum.each(@bad_trees, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> reduce(bad_tree, 0, fn _k, v, a -> a + v end) end
-    end)
-  end
-
   # Radix.to_list/1
   test "to_list/1 lists all k,v-pairs" do
     t =
@@ -570,12 +479,6 @@ defmodule RadixTest do
     kvs = to_list(t)
     assert Enum.count(kvs) == 12
     assert Enum.reduce(kvs, 0, fn {_k, v}, acc -> v + acc end) == Enum.sum(1..12)
-  end
-
-  test "to_list/1 requires tree's root node" do
-    Enum.each(@bad_trees, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> to_list(bad_tree) end
-    end)
   end
 
   # Radix.keys/1
@@ -611,12 +514,6 @@ defmodule RadixTest do
     assert <<0, 0, 0::2>> in keys
   end
 
-  test "keys/1 requires tree's root node" do
-    Enum.each(@bad_trees, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> keys(bad_tree) end
-    end)
-  end
-
   # Radix.values/1
   test "values/1 lists all values" do
     t =
@@ -637,12 +534,6 @@ defmodule RadixTest do
     values = values(t)
     assert Enum.count(values) == 12
     assert Enum.sum(values) == Enum.sum(1..12)
-  end
-
-  test "values/1 requires tree's root node" do
-    Enum.each(@bad_trees, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> values(bad_tree) end
-    end)
   end
 
   # Radix.walk/4
@@ -719,13 +610,5 @@ defmodule RadixTest do
              [{<<128>>, 3}],
              [{<<0>>, 4}, {"", 1}]
            ]
-  end
-
-  test "walk/3 requires tree's root node" do
-    f = fn x -> x end
-
-    Enum.each(@bad_trees, fn bad_tree ->
-      assert_raise FunctionClauseError, fn -> walk(bad_tree, f, []) end
-    end)
   end
 end
