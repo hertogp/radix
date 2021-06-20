@@ -69,6 +69,33 @@ defmodule RadixTest do
 
   # RadixError's
 
+  test "API functions detect corrupt radix nodes" do
+    # since anybody can add their own tree manip functions to the mix
+    broken_tree = {0, [42], nil}
+    upfun = fn x -> x end
+    rdfun = fn _acc, _k, _v -> 0 end
+    wkfun = fn _acc, _node -> 0 end
+    key = <<1>>
+    assert_raise(RadixError, fn -> fetch(broken_tree, key) end)
+    assert_raise(RadixError, fn -> fetch!(broken_tree, key) end)
+    assert_raise(RadixError, fn -> get(broken_tree, key) end)
+    assert_raise(RadixError, fn -> put(broken_tree, key, 0) end)
+    assert_raise(RadixError, fn -> put(broken_tree, [{key, 0}]) end)
+    assert_raise(RadixError, fn -> delete(broken_tree, key) end)
+    assert_raise(RadixError, fn -> drop(broken_tree, [key]) end)
+    assert_raise(RadixError, fn -> lookup(broken_tree, key) end)
+    assert_raise(RadixError, fn -> update(broken_tree, key, 0, upfun) end)
+    assert_raise(RadixError, fn -> less(broken_tree, key) end)
+    assert_raise(RadixError, fn -> more(broken_tree, key) end)
+    assert_raise(RadixError, fn -> reduce(broken_tree, 0, rdfun) end)
+    assert_raise(RadixError, fn -> to_list(broken_tree) end)
+    assert_raise(RadixError, fn -> keys(broken_tree) end)
+    assert_raise(RadixError, fn -> values(broken_tree) end)
+
+    assert_raise(RadixError, fn -> walk(broken_tree, 0, wkfun) end)
+    assert_raise(RadixError, fn -> dot(broken_tree) end)
+  end
+
   # Radix.new/0
   test "new, empty radix tree" do
     t = new()

@@ -4,11 +4,6 @@ defmodule RadixError do
   @moduledoc """
   RadixError provides information on error conditions that may occur.
 
-  These include:
-  - :badroot, when a valid radix root node was expected,
-  - :badkey, when a valid radix key (bitstring) was expected, and
-  - :badlist, when a list of {key,value}-pairs was expected
-
   """
 
   @typedoc """
@@ -31,24 +26,18 @@ defmodule RadixError do
   def hint(data, opts \\ []),
     do: "#{inspect(data, Keyword.put(opts, :limit, @limit))}"
 
-  defp format(:badroot, data),
-    do: "expected a radix tree root node {0, _, _}, got #{hint(data)}"
-
   defp format(:badleaf, data),
     do: "expected a radix leaf node [{k,v},..], got #{hint(data)}"
 
   defp format(:badnode, data),
     do: "expected a valid radix node, got #{hint(data)}"
 
-  defp format(:badkey, data),
-    do: "expected a bitstring, got #{hint(data, base: :binary)}"
-
-  defp format(:badlist, data),
-    do: "badlist: expected a list of {key, values}-pairs, got #{hint(data)}"
+  defp format(:badkeyval, data),
+    do: "expected a valid {key, value}-pair, got #{hint(data)}"
 
   # catch all in case some `reason`, `data` was missed here.
   defp format(reason, data),
-    do: "unknown error, #{reason}, #{hint(data)}"
+    do: "TODO, describe error: #{reason} for #{hint(data)}"
 end
 
 defmodule Radix do
@@ -352,8 +341,13 @@ defmodule Radix do
   defp lessp(nil, _),
     do: []
 
-  defp lessp(leaf, key),
-    do: Enum.filter(leaf, fn {k, _} -> prefix?(k, key) end)
+  defp lessp(leaf, key) do
+    try do
+      Enum.filter(leaf, fn {k, _} -> prefix?(k, key) end)
+    rescue
+      FunctionClauseError -> raise error(:badleaf, leaf)
+    end
+  end
 
   @spec lookupp(tree | leaf, key, non_neg_integer) :: {key, value} | nil
   defp lookupp({b, l, r} = _tree, key, kmax) when b < kmax do
@@ -391,8 +385,13 @@ defmodule Radix do
   defp morep(nil, _),
     do: []
 
-  defp morep(leaf, key),
-    do: Enum.filter(leaf, fn {k, _} -> prefix?(key, k) end)
+  defp morep(leaf, key) do
+    try do
+      Enum.filter(leaf, fn {k, _} -> prefix?(key, k) end)
+    rescue
+      FunctionClauseError -> raise error(:badleaf, leaf)
+    end
+  end
 
   # put
   # - puts/updates a {key,value}-pair in the tree
@@ -442,6 +441,7 @@ defmodule Radix do
   defp reducep([], acc, _fun), do: acc
   defp reducep({_, l, r}, acc, fun), do: reducep(r, reducep(l, acc, fun), fun)
   defp reducep([{k, v} | tail], acc, fun), do: reducep(tail, fun.(k, v, acc), fun)
+  defp reducep(tree, _acc, _fun), do: raise(error(:badtree, tree))
 
   # internal node
   defp walkp(acc, fun, {bit, l, r}, order) do
@@ -467,8 +467,11 @@ defmodule Radix do
   end
 
   # leaf node
-  defp walkp(acc, fun, leaf, _order),
+  defp walkp(acc, fun, [{k, _v} | _tail] = leaf, _order) when is_bitstring(k),
     do: fun.(acc, leaf)
+
+  defp walkp(_acc, _fun, node, _order),
+    do: raise(error(:badnode, node))
 
   # DOT helpers
 
@@ -585,6 +588,9 @@ defmodule Radix do
     bytes = for <<(x::8 <- <<key::bitstring, 0::size(pad)>>)>>, do: x
     "#{Enum.join(bytes, ".")}/#{bit_size(key)}"
   end
+
+  defp kv_tostr(keyval),
+    do: raise(error(:badkeyval, keyval))
 
   # API
 
