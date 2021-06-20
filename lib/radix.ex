@@ -30,7 +30,7 @@ defmodule RadixError do
     do: "expected a radix leaf node [{k,v},..], got #{hint(data)}"
 
   defp format(:badnode, data),
-    do: "expected a valid radix node, got #{hint(data)}"
+    do: "expected a valid radix node or leaf, got #{hint(data)}"
 
   defp format(:badkeyval, data),
     do: "expected a valid {key, value}-pair, got #{hint(data)}"
@@ -441,7 +441,7 @@ defmodule Radix do
   defp reducep([], acc, _fun), do: acc
   defp reducep({_, l, r}, acc, fun), do: reducep(r, reducep(l, acc, fun), fun)
   defp reducep([{k, v} | tail], acc, fun), do: reducep(tail, fun.(k, v, acc), fun)
-  defp reducep(tree, _acc, _fun), do: raise(error(:badtree, tree))
+  defp reducep(tree, _acc, _fun), do: raise(error(:badnode, tree))
 
   # internal node
   defp walkp(acc, fun, {bit, l, r}, order) do

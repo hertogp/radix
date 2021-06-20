@@ -69,13 +69,16 @@ defmodule RadixTest do
 
   # RadixError's
 
-  test "API functions detect corrupt radix nodes" do
+  test "API functions detect some corruption in radix trees" do
     # since anybody can add their own tree manip functions to the mix
     broken_tree = {0, [42], nil}
+    key = <<1>>
+    # note that root's left subtree is corrupt, key <<1>> will go left
+    # so the API functions should detect the corruption for this combination
     upfun = fn x -> x end
     rdfun = fn _acc, _k, _v -> 0 end
     wkfun = fn _acc, _node -> 0 end
-    key = <<1>>
+
     assert_raise(RadixError, fn -> fetch(broken_tree, key) end)
     assert_raise(RadixError, fn -> fetch!(broken_tree, key) end)
     assert_raise(RadixError, fn -> get(broken_tree, key) end)
@@ -91,9 +94,20 @@ defmodule RadixTest do
     assert_raise(RadixError, fn -> to_list(broken_tree) end)
     assert_raise(RadixError, fn -> keys(broken_tree) end)
     assert_raise(RadixError, fn -> values(broken_tree) end)
-
     assert_raise(RadixError, fn -> walk(broken_tree, 0, wkfun) end)
     assert_raise(RadixError, fn -> dot(broken_tree) end)
+
+    # using a key whose 1st bit is `1`, leads some functions to a valid leaf
+    # while other, by nature, walk the entire tree and thus choke on the
+    # invalid left subtree of the root node.
+    key = <<225>>
+    fetch(broken_tree, key)
+    get(broken_tree, key)
+    put(broken_tree, key, 0)
+    put(broken_tree, [{key, 0}])
+    delete(broken_tree, key)
+    drop(broken_tree, [key])
+    more(broken_tree, key)
   end
 
   # Radix.new/0
