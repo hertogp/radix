@@ -632,6 +632,21 @@ defmodule Radix do
   def new(elements),
     do: raise(bad_list(elements))
 
+  @doc """
+  Fetches the key,value-pair for a specific `key` in the given `tree`.
+
+  Returns `{:ok, {key, value}}` or :error when `key` is not in the `tree`.
+
+  ## Example
+
+      iex> t = new([{<<1>>, 1}, {<<1, 1>>, 2}])
+      iex> fetch(t, <<1, 1>>)
+      {:ok, {<<1, 1>>, 2}}
+      iex>
+      iex> fetch(t, <<2>>)
+      :error
+
+  """
   @spec fetch(tree, key) :: {:ok, {key, value}} | :error
   def fetch(tree, key) do
     case get(tree, key) do
@@ -640,6 +655,20 @@ defmodule Radix do
     end
   end
 
+  @doc """
+  Fetches the key,value-pair for a specific `key` in the given `tree`.
+
+  Returns the `{key, value}`-pair itself, or raises a `KeyError` if `key` is not in the `tree`.
+
+  ## Example
+
+      iex> t = new([{<<1>>, 1}, {<<1, 1>>, 2}])
+      iex> fetch!(t, <<1, 1>>)
+      {<<1, 1>>, 2}
+      iex>
+      iex> fetch!(t, <<2>>)
+      ** (KeyError) key not found <<0b10>>
+  """
   def fetch!(tree, key) do
     case get(tree, key) do
       {k, v} -> {k, v}
