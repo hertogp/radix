@@ -9,11 +9,15 @@ defmodule RadixTest do
   # list of {k,k}-entries, where k is 16 bits
   @slash16kv for x <- 0..255, y <- 0..255, do: {<<x, y>>, <<x, y>>}
 
-  # RadixError
+  # ArgumentError's
 
   test "API functions require a valid radix root" do
     key = <<0>>
+    upfun = fn x -> x end
+    rdfun = fn _acc, _k, _v -> 0 end
+    wkfun = fn _acc, _node -> 0 end
 
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> fetch(t, key) end)
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> fetch!(t, key) end)
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> get(t, key) end)
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> put(t, key, 0) end)
@@ -21,12 +25,49 @@ defmodule RadixTest do
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> delete(t, key) end)
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> drop(t, [key]) end)
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> lookup(t, key) end)
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> update(t, key, 0, upfun) end)
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> less(t, key) end)
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> more(t, key) end)
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> reduce(t, 0, rdfun) end)
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> to_list(t) end)
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> keys(t) end)
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> values(t) end)
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> walk(t, 0, wkfun) end)
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> dot(t) end)
   end
 
   test "API functions require a valid radix key" do
     tree = {0, nil, nil}
+    upfun = fn x -> x end
+
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> fetch(tree, k) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> fetch!(tree, k) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> get(tree, k) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> put(tree, k, 0) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> put(tree, [{k, 0}]) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> delete(tree, k) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> drop(tree, [k]) end)
     for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> lookup(tree, k) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> update(tree, k, 0, upfun) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> less(tree, k) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> more(tree, k) end)
   end
+
+  test "API functions validate arity of callbacks" do
+    tree = {0, nil, nil}
+    key = <<1>>
+    fun0 = fn -> 0 end
+    fun1 = fn _ -> 0 end
+    fun2 = fn _, _ -> 0 end
+    assert_raise(ArgumentError, fn -> update(tree, key, 0, fun0) end)
+    assert_raise(ArgumentError, fn -> update(tree, key, 0, fun2) end)
+    assert_raise(ArgumentError, fn -> reduce(tree, 0, fun0) end)
+    assert_raise(ArgumentError, fn -> reduce(tree, 0, fun1) end)
+    assert_raise(ArgumentError, fn -> walk(tree, 0, fun0) end)
+    assert_raise(ArgumentError, fn -> walk(tree, 0, fun1) end)
+  end
+
+  # RadixError's
 
   # Radix.new/0
   test "new, empty radix tree" do
