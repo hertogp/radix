@@ -23,7 +23,7 @@ defmodule RadixError do
   def message(%__MODULE__{reason: reason, data: data}),
     do: format(reason, data)
 
-  def hint(data, opts \\ []),
+  defp hint(data, opts \\ []),
     do: "#{inspect(data, Keyword.put(opts, :limit, @limit))}"
 
   defp format(:badleaf, data),
@@ -130,6 +130,7 @@ defmodule Radix do
     do: ArgumentError.exception("expected a function with arity #{arity}, got #{inspect(arg)}")
 
   # a RadixError is raised for corrupt nodes or bad keys in a list
+  @spec error(atom, any) :: RadixError.t()
   defp error(reason, data),
     do: RadixError.exception(reason, data)
 
