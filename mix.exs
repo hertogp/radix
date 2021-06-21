@@ -1,11 +1,15 @@
 defmodule Radix.MixProject do
   use Mix.Project
 
-  # Before publishing to Hex, tag the release in the git repo
-  #   git tag -a v0.1.0 -m 'Release v0.1.0'
-  #   git push --tags
+  # Before publishing to Hex:
+  # - mix test
+  # - mix docz
+  # - mix dialyzer
+  # - git tag -a v0.1.x -m 'Release v0.1.x'
+  # - git push --tags
+  # mix hex.publish
 
-  @version "0.1.0"
+  @version "0.1.1"
   @url "https://github.com/hertogp/radix"
 
   def project do

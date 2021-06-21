@@ -110,23 +110,23 @@ defmodule Radix do
   #
 
   # consistent ArgumentError's
-  def bad_tree(arg),
+  defp bad_tree(arg),
     do: ArgumentError.exception("expected a radix tree root node, got #{inspect(arg, limit: 3)}")
 
-  def bad_key(arg),
+  defp bad_key(arg),
     do:
       ArgumentError.exception("expected a radix key (bitstring), got: #{inspect(arg, limit: 3)}")
 
-  def bad_keys(arg),
+  defp bad_keys(arg),
     do:
       ArgumentError.exception(
         "expected a list of radix keys (bitstring), got: #{inspect(arg, limit: 3)}"
       )
 
-  def bad_list(arg),
+  defp bad_list(arg),
     do: ArgumentError.exception("expected a list of {key,value}-pairs, got #{inspect(arg)}")
 
-  def bad_fun(arg, arity),
+  defp bad_fun(arg, arity),
     do: ArgumentError.exception("expected a function with arity #{arity}, got #{inspect(arg)}")
 
   # a RadixError is raised for corrupt nodes or bad keys in a list
