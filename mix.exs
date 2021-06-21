@@ -10,7 +10,8 @@ defmodule Radix.MixProject do
       version: @version,
       elixir: "~> 1.11",
       name: "Radix",
-      description: "A bitwise radix tree that stores any value under a bitstring key",
+      description:
+        "A bitwise radix tree for prefix based matching on bitstring keys of any length.",
       deps: deps(),
       docs: docs(),
       package: package(),

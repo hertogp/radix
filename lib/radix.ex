@@ -709,11 +709,11 @@ defmodule Radix do
     |> keyget(key, kmax) || default
   end
 
-  def get(tree, key, _default) when is_bitstring(key),
-    do: raise(bad_tree(tree))
-
-  def get(_tree, key, _default),
+  def get({0, _, _} = _tree, key, _default),
     do: raise(bad_key(key))
+
+  def get(tree, _key, _default),
+    do: raise(bad_tree(tree))
 
   @doc """
   Stores {`key`, `value`}-pairs in the radix `tree`.
@@ -740,11 +740,11 @@ defmodule Radix do
     end
   end
 
-  def put(tree, elements) when is_list(elements),
-    do: raise(bad_tree(tree))
-
-  def put(_tree, elements),
+  def put({0, _, _} = _tree, elements),
     do: raise(bad_list(elements))
+
+  def put(tree, _elements),
+    do: raise(bad_tree(tree))
 
   @doc """
   Store a {`key`,`value`}-pair in the radix `tree`.
@@ -775,11 +775,11 @@ defmodule Radix do
   def put({0, _, _} = tree, key, value) when is_bitstring(key),
     do: putp(tree, keypos(tree, key), key, value)
 
-  def put(tree, key, _value) when is_bitstring(key),
-    do: raise(bad_tree(tree))
-
-  def put(_tree, key, _value),
+  def put({0, _, _} = _tree, key, _value),
     do: raise(bad_key(key))
+
+  def put(tree, _key, _value),
+    do: raise(bad_tree(tree))
 
   @doc """
   Delete the entry from the `tree` for a specific `key` using an exact match.
@@ -807,11 +807,11 @@ defmodule Radix do
   def delete({0, _, _} = tree, key) when is_bitstring(key),
     do: deletep(tree, key)
 
-  def delete(tree, key) when is_bitstring(key),
-    do: raise(bad_tree(tree))
-
-  def delete(_tree, key),
+  def delete({0, _, _} = _tree, key),
     do: raise(bad_key(key))
+
+  def delete(tree, _key),
+    do: raise(bad_tree(tree))
 
   @doc """
   Drops the given `keys` from the radix `tree` using an exact match.
@@ -841,11 +841,11 @@ defmodule Radix do
     end
   end
 
-  def drop(tree, keys) when is_list(keys),
-    do: raise(bad_tree(tree))
-
-  def drop(_tree, keys),
+  def drop({0, _, _} = _tree, keys),
     do: raise(bad_list(keys))
+
+  def drop(tree, _keys),
+    do: raise(bad_tree(tree))
 
   # get the longest prefix match for binary key
   # - follow tree path using key and get longest match from the leaf found
@@ -878,11 +878,11 @@ defmodule Radix do
   def lookup({0, _, _} = tree, key) when is_bitstring(key),
     do: lookupp(tree, key, bit_size(key))
 
-  def lookup(tree, key) when is_bitstring(key),
-    do: raise(bad_tree(tree))
-
-  def lookup(_tree, key),
+  def lookup({0, _, _} = _tree, key),
     do: raise(bad_key(key))
+
+  def lookup(tree, _key),
+    do: raise(bad_tree(tree))
 
   @doc """
   Lookup given search `key` in `tree` and update the value of matched key with
@@ -919,7 +919,7 @@ defmodule Radix do
   def update(tree, key, _default, fun) when is_bitstring(key) and is_function(fun, 1),
     do: raise(bad_tree(tree))
 
-  def update(_tree, key, _val, fun) when is_bitstring(key),
+  def update({0, _, _} = _tree, key, _val, fun) when is_bitstring(key),
     do: raise(bad_fun(fun, 1))
 
   def update(_tree, key, _default, _fun),
@@ -954,11 +954,11 @@ defmodule Radix do
   def less({0, _, _} = tree, key) when is_bitstring(key),
     do: lessp(tree, key)
 
-  def less(tree, key) when is_bitstring(key),
-    do: raise(bad_tree(tree))
-
-  def less(_tree, key),
+  def less({0, _, _} = _tree, key),
     do: raise(bad_key(key))
+
+  def less(tree, _key),
+    do: raise(bad_tree(tree))
 
   @doc """
   Returns all key,value-pair(s) where the given search `key` is a prefix for a stored key.
@@ -989,11 +989,11 @@ defmodule Radix do
   def more({0, _, _} = tree, key) when is_bitstring(key),
     do: morep(tree, key)
 
-  def more(tree, key) when is_bitstring(key),
-    do: raise(bad_tree(tree))
-
-  def more(_tree, key),
+  def more({0, _, _} = _tree, key),
     do: raise(bad_key(key))
+
+  def more(tree, _key),
+    do: raise(bad_tree(tree))
 
   @doc """
   Invokes `fun` for each key,value-pair in the radix `tree` with the accumulator.
@@ -1025,11 +1025,11 @@ defmodule Radix do
   def reduce({0, _, _} = tree, acc, fun) when is_function(fun, 3),
     do: reducep(tree, acc, fun)
 
-  def reduce(tree, _acc, fun) when is_function(fun, 3),
-    do: raise(bad_tree(tree))
-
-  def reduce(_tree, _acc, fun),
+  def reduce({0, _, _} = _tree, _acc, fun),
     do: raise(bad_fun(fun, 3))
+
+  def reduce(tree, _acc, _fun),
+    do: raise(bad_tree(tree))
 
   @doc """
   Return all key,value-pairs as a flat list.
@@ -1144,11 +1144,11 @@ defmodule Radix do
   def walk({0, _, _} = tree, acc, fun, order) when is_function(fun, 2),
     do: walkp(acc, fun, tree, order)
 
-  def walk(tree, _acc, fun, _order) when is_function(fun, 2),
-    do: raise(bad_tree(tree))
-
-  def walk(_tree, _acc, fun, _order),
+  def walk({0, _, _} = _tree, _acc, fun, _order),
     do: raise(bad_fun(fun, 2))
+
+  def walk(tree, _acc, _fun, _order),
+    do: raise(bad_tree(tree))
 
   @doc ~S"""
   Given a tree, returns a list of lines describing the tree as a [graphviz](https://graphviz.org/) digraph.
