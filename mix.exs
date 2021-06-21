@@ -1,6 +1,10 @@
 defmodule Radix.MixProject do
   use Mix.Project
 
+  # Before publishing to Hex, tag the release in the git repo
+  #   git tag -a v0.1.0 -m 'Release v0.1.0'
+  #   git push --tags
+
   @version "0.1.0"
   @url "https://github.com/hertogp/radix"
 
