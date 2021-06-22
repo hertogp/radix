@@ -1159,12 +1159,12 @@ defmodule Radix do
   - `:labelloc`, defaults to "t"
   - `:rankdir`, defaults to "TB"
   - `:ranksep`, defaults to "0.5 equally"
-  - `:rootcolor`, defaults to "organge"
+  - `:rootcolor`, defaults to "orange"
   - `:nodecolor`, defaults to "yellow"
   - `:leafcolor`, defaults to "green"
   - `:kv_tostr`, defaults to an internal function that converts key to dotted decimal string (cidr style)
 
-  If supplied via `:kv_tostr`, the function's signature must be ({`t:key/0`, `t:value/0`}) ::> `t:String.t/0`
+  If supplied via `:kv_tostr`, the function's signature must be ({`t:key/0`, `t:value/0`}) :: `t:String.t/0`
   and where the resulting string must be HTML-escaped.  See [html-entities](https://graphviz.org/doc/char.html).
 
   Works best for smaller trees.
