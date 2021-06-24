@@ -101,7 +101,7 @@ by adding `radix` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:radix, "~> 0.1.2"}
+    {:radix, "~> 0.2.0"}
   ]
 end
 ```
