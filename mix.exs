@@ -5,8 +5,8 @@ defmodule Radix.MixProject do
   # - mix test
   # - mix docz
   # - mix dialyzer
-  # - ensure right version tag in mix.exs, README.md
-  # - git tag -a v0.1.x -m 'Release v0.1.x'
+  # - ensure right version tag in mix.exs, README.md and CHANGELOG.md
+  # - git tag -a vx.y.z -m 'Release vx.y.z'
   # - git push --tags
   # mix hex.publish
 

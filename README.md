@@ -1,9 +1,11 @@
 # README
 
-![radix test](https://github.com/hertogp/radix/actions/workflows/elixir.yml/badge.svg)
-
-
-[Online Radix Documentation](https://hexdocs.pm/radix).
+[![Test](https://github.com/hertogp/radix/actions/workflows/elixir.yml/badge.svg)](https://github.com/hertogp/radix/actions/workflows/elixir.yml)
+[![Module Version](https://img.shields.io/hexpm/v/radix.svg)](https://hex.pm/packages/radix)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/radix/)
+[![Last Updated](https://img.shields.io/github/last-commit/hertogp/radix.svg)](https://github.com/hertogp/radix/commits/main)
+[![License](https://img.shields.io/hexpm/l/radix.svg)](https://github.com/hertogp/radix/blob/master/LICENSE.md)
+[![Total Download](https://img.shields.io/hexpm/dt/radix.svg)](https://hex.pm/packages/radix)
 
 <!-- @MODULEDOC -->
 

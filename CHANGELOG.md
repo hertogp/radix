@@ -1,6 +1,14 @@
 # Changelog
 
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a
+Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
 ## [Unreleased]
+
+### added
 - [ ] add size
 - [ ] add empty?
 - [ ] add merge(t1, t2) - see `Map.merge/2`
@@ -9,6 +17,8 @@
 - [ ] add split(t1, keys) - see `Map.split/2`
 - [ ] add pop(t1, key, default), see `Map.pop/3`
 - [ ] add pop!(t1, key), see `Map.pop!/2`
+
+### changed
 - use assets subdir for images
 
 ## [v0.1.1] - 2021-06-21
