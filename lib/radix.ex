@@ -1187,12 +1187,12 @@ defmodule Radix do
         "N5:L -> N3;\n",
         "N5 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N5\" COLSPAN=\"2\" BGCOLOR=\"orange\">bit 0</TD></TR>\n    <TR><TD PORT=\"L\">0</TD><TD PORT=\"R\">1</TD></TR>\n  </TABLE>\n>, shape=\"plaintext\"];\n",
         "}"]
-      iex> File.write("img/example.dot", g)
+      iex> File.write("assets/example.dot", g)
       :ok
 
    which, after converting with `dot`, yields the following image:
 
-   ![example](img/example.dot.png)
+   ![example](assets/example.dot.png)
 
   """
   @spec dot(tree, keyword()) :: list(String.t())

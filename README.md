@@ -48,12 +48,12 @@ key-match. Retrieval can be either exact or is based on a prefix match.
     iex> get(t, <<1, 1, 1, 0>>)
     nil
     iex>
-    iex> dot(t) |> (&File.write("img/readme.dot", &1)).()
+    iex> dot(t) |> (&File.write("assets/readme.dot", &1)).()
 
 
 The radix tree above looks something like this:
 
-![Radix](img/readme.dot.png)
+![Radix](assets/readme.dot.png)
 
 The tree is represented by two types of nodes:
 - *internal node*, as a `{bit, left, right}`-tuple, and
