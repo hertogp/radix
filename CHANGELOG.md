@@ -8,18 +8,23 @@ Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 
 ## [Unreleased]
 
-### added
-- [ ] add size
-- [ ] add empty?
-- [ ] add merge(t1, t2) - see `Map.merge/2`
-- [ ] add merge(t1, t2, fun) - see `Map.merge/3`
-- [ ] add take(t1, keys) - see `Map.take/2`
-- [ ] add split(t1, keys) - see `Map.split/2`
-- [ ] add pop(t1, key, default), see `Map.pop/3`
-- [ ] add pop!(t1, key), see `Map.pop!/2`
+## [v0.2.0] - 2021-07-18
 
 ### changed
+- `Radix.fetch/3` now can optionally use longest prefix match
+- functions raise their own errors
 - use assets subdir for images
+
+### added
+- `Radix.empty?/1`, says if a `tree` is empty or not
+- `Radix.count/1`, traverses the `tree` and counts its entries
+- `Radix.merge/2`, merges `tree2` into `tree1`, overriding `tree1`
+- `Radix.merge/3`, merges `tree2` into `tree1`, conflicts handled by `fun`
+- `Radix.take/3`, returns new tree with selected `keys` only
+- `Radix.pop/3`, removes key,value-pair and returns it with the new tree
+- `Radix.split/3`, split a radix tree into two trees
+
+### changed
 
 ## [v0.1.1] - 2021-06-21
 

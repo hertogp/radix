@@ -107,27 +107,26 @@ defmodule Radix do
   @empty {0, nil, nil}
 
   # Helpers
-  #
 
   # consistent ArgumentError's
-  defp bad_tree(arg),
-    do: ArgumentError.exception("expected a radix tree root node, got #{inspect(arg, limit: 3)}")
-
-  defp bad_key(arg),
-    do:
-      ArgumentError.exception("expected a radix key (bitstring), got: #{inspect(arg, limit: 3)}")
-
-  defp bad_keys(arg),
-    do:
-      ArgumentError.exception(
-        "expected a list of radix keys (bitstring), got: #{inspect(arg, limit: 3)}"
-      )
-
-  defp bad_list(arg),
+  @spec arg_err(atom, any) :: Exception.t()
+  defp arg_err(:bad_keyvals, arg),
     do: ArgumentError.exception("expected a list of {key,value}-pairs, got #{inspect(arg)}")
 
-  defp bad_fun(arg, arity),
-    do: ArgumentError.exception("expected a function with arity #{arity}, got #{inspect(arg)}")
+  defp arg_err(:bad_tree, arg),
+    do: ArgumentError.exception("expected a radix tree root node, got #{inspect(arg, limit: 3)}")
+
+  defp arg_err(:bad_key, arg),
+    do: ArgumentError.exception("expected a radix bitstring key, got: #{inspect(arg, limit: 3)}")
+
+  defp arg_err(:bad_keys, arg),
+    do:
+      ArgumentError.exception(
+        "expected a list of radix bitstring keys, got: #{inspect(arg, limit: 3)}"
+      )
+
+  defp arg_err(:bad_fun, {fun, arity}),
+    do: ArgumentError.exception("expected a function with arity #{arity}, got #{inspect(fun)}")
 
   # a RadixError is raised for corrupt nodes or bad keys in a list
   @spec error(atom, any) :: RadixError.t()
@@ -474,6 +473,14 @@ defmodule Radix do
   defp walkp(_acc, _fun, node, _order),
     do: raise(error(:badnode, node))
 
+  defp match(opts) do
+    case Keyword.get(opts, :match) do
+      :longest -> &lookup/2
+      :lpm -> &lookup/2
+      _ -> &get/2
+    end
+  end
+
   # DOT helpers
 
   # annotate a tree with uniq numbers per node.  the result is no longer a
@@ -623,43 +630,82 @@ defmodule Radix do
   """
   @spec new([{key, value}]) :: tree
   def new(elements) when is_list(elements) do
-    try do
-      Enum.reduce(elements, @empty, fn {k, v}, t when is_bitstring(k) -> put(t, k, v) end)
-    rescue
-      FunctionClauseError -> raise bad_list(elements)
-    end
+    Enum.reduce(elements, @empty, fn {k, v}, t when is_bitstring(k) -> put(t, k, v) end)
+  rescue
+    FunctionClauseError -> raise arg_err(:bad_keyvals, elements)
   end
 
   def new(elements),
-    do: raise(bad_list(elements))
+    do: raise(arg_err(:bad_keyvals, elements))
+
+  @doc """
+  Counts the number of entries by traversing given `tree`.
+
+  ## Example
+
+      iex> new([{<<>>, nil}, {<<1>>, 1}, {<<2>>, 2}])
+      ...> |> count
+      3
+  """
+  @spec count(tree) :: non_neg_integer
+  def count({0, _, _} = tree) do
+    reduce(tree, 0, fn _key, _value, acc -> acc + 1 end)
+  rescue
+    err -> raise err
+  end
+
+  @doc """
+  Say whether given `tree` is empty or not.
+
+  ## Example
+
+      iex> new() |> empty?()
+      true
+
+  """
+  @spec empty?(tree) :: boolean
+  def empty?({0, _, _} = tree),
+    do: tree == @empty
+
+  def empty?(tree),
+    do: raise(error(:badtree, tree))
 
   @doc """
   Fetches the key,value-pair for a specific `key` in the given `tree`.
 
-  Returns `{:ok, {key, value}}` or :error when `key` is not in the `tree`.
+  Returns `{:ok, {key, value}}` or `:error` when `key` is not in the `tree`.  By
+  default an exact match is used, specify `match: :lpm` to fetch based on a
+  longest prefix match.
 
   ## Example
 
-      iex> t = new([{<<1>>, 1}, {<<1, 1>>, 2}])
+      iex> t = new([{<<>>, 0}, {<<1>>, 1}, {<<1, 1>>, 2}])
       iex> fetch(t, <<1, 1>>)
       {:ok, {<<1, 1>>, 2}}
       iex>
       iex> fetch(t, <<2>>)
       :error
+      iex> fetch(t, <<2>>, match: :lpm)
+      {:ok, {<<>>, 0}}
 
   """
-  @spec fetch(tree, key) :: {:ok, {key, value}} | :error
-  def fetch(tree, key) do
-    case get(tree, key) do
+  @spec fetch(tree, key, keyword) :: {:ok, {key, value}} | :error
+  def fetch(tree, key, opts \\ []) do
+    case match(opts).(tree, key) do
+      # case get(tree, key) do
       {k, v} -> {:ok, {k, v}}
       _ -> :error
     end
+  rescue
+    err -> raise err
   end
 
   @doc """
   Fetches the key,value-pair for a specific `key` in the given `tree`.
 
-  Returns the `{key, value}`-pair itself, or raises a `KeyError` if `key` is not in the `tree`.
+  Returns the `{key, value}`-pair itself, or raises a `KeyError` if `key` is
+  not in the `tree`.  By default an exact match is used, specify `match: :lpm`
+  to fetch based on a longest prefix match.
 
   ## Example
 
@@ -669,13 +715,19 @@ defmodule Radix do
       iex>
       iex> fetch!(t, <<2>>)
       ** (KeyError) key not found <<0b10>>
+      iex>
+      iex> fetch!(t, <<1, 1, 1>>, match: :lpm)
+      {<<1, 1>>, 2}
 
   """
-  def fetch!(tree, key) do
-    case get(tree, key) do
+  @spec fetch!(tree, key, keyword) :: {key, value}
+  def fetch!(tree, key, opts \\ []) do
+    case match(opts).(tree, key) do
       {k, v} -> {k, v}
       nil -> raise KeyError, "key not found #{inspect(key, base: :binary)}"
     end
+  rescue
+    err -> raise err
   end
 
   @doc """
@@ -708,16 +760,18 @@ defmodule Radix do
     tree
     |> leaf(key, kmax)
     |> keyget(key, kmax) || default
+  rescue
+    err -> raise err
   end
 
   def get({0, _, _} = _tree, key, _default),
-    do: raise(bad_key(key))
+    do: raise(arg_err(:bad_key, key))
 
   def get(tree, _key, _default),
-    do: raise(bad_tree(tree))
+    do: raise(arg_err(:bad_tree, tree))
 
   @doc """
-  Stores {`key`, `value`}-pairs in the radix `tree`.
+  Stores the key,value-pairs from `elements` in the radix `tree`.
 
   Any existing `key`'s will have their `value`'s replaced.
 
@@ -734,21 +788,20 @@ defmodule Radix do
   """
   @spec put(tree, [{key, value}]) :: tree
   def put({0, _, _} = tree, elements) when is_list(elements) do
-    try do
-      Enum.reduce(elements, tree, fn {k, v}, t when is_bitstring(k) -> put(t, k, v) end)
-    rescue
-      FunctionClauseError -> raise bad_list(elements)
-    end
+    Enum.reduce(elements, tree, fn {k, v}, t when is_bitstring(k) -> put(t, k, v) end)
+  rescue
+    FunctionClauseError -> raise arg_err(:bad_keyvals, elements)
+    err -> raise err
   end
 
   def put({0, _, _} = _tree, elements),
-    do: raise(bad_list(elements))
+    do: raise(arg_err(:bad_keyvals, elements))
 
   def put(tree, _elements),
-    do: raise(bad_tree(tree))
+    do: raise(arg_err(:bad_tree, tree))
 
   @doc """
-  Store a {`key`,`value`}-pair in the radix `tree`.
+  Stores the `key`,`value`-pair under `key` in the radix `tree`.
 
   Any existing `key` will have its `value` replaced.
 
@@ -773,14 +826,17 @@ defmodule Radix do
 
   """
   @spec put(tree, key, value) :: tree
-  def put({0, _, _} = tree, key, value) when is_bitstring(key),
-    do: putp(tree, keypos(tree, key), key, value)
+  def put({0, _, _} = tree, key, value) when is_bitstring(key) do
+    putp(tree, keypos(tree, key), key, value)
+  rescue
+    err -> raise err
+  end
 
   def put({0, _, _} = _tree, key, _value),
-    do: raise(bad_key(key))
+    do: raise(arg_err(:bad_key, key))
 
   def put(tree, _key, _value),
-    do: raise(bad_tree(tree))
+    do: raise(arg_err(:bad_tree, tree))
 
   @doc """
   Delete the entry from the `tree` for a specific `key` using an exact match.
@@ -805,14 +861,17 @@ defmodule Radix do
 
   """
   @spec delete(tree, key) :: tree
-  def delete({0, _, _} = tree, key) when is_bitstring(key),
-    do: deletep(tree, key)
+  def delete({0, _, _} = tree, key) when is_bitstring(key) do
+    deletep(tree, key)
+  rescue
+    err -> raise err
+  end
 
   def delete({0, _, _} = _tree, key),
-    do: raise(bad_key(key))
+    do: raise(arg_err(:bad_key, key))
 
   def delete(tree, _key),
-    do: raise(bad_tree(tree))
+    do: raise(arg_err(:bad_tree, tree))
 
   @doc """
   Drops the given `keys` from the radix `tree` using an exact match.
@@ -835,18 +894,17 @@ defmodule Radix do
   """
   @spec drop(tree, [key]) :: tree
   def drop({0, _, _} = tree, keys) when is_list(keys) do
-    try do
-      Enum.reduce(keys, tree, fn key, tree when is_bitstring(key) -> delete(tree, key) end)
-    rescue
-      FunctionClauseError -> raise bad_keys(keys)
-    end
+    Enum.reduce(keys, tree, fn key, tree when is_bitstring(key) -> delete(tree, key) end)
+  rescue
+    FunctionClauseError -> raise arg_err(:bad_keys, keys)
+    err -> raise err
   end
 
   def drop({0, _, _} = _tree, keys),
-    do: raise(bad_list(keys))
+    do: raise(arg_err(:bad_keys, keys))
 
   def drop(tree, _keys),
-    do: raise(bad_tree(tree))
+    do: raise(arg_err(:bad_tree, tree))
 
   # get the longest prefix match for binary key
   # - follow tree path using key and get longest match from the leaf found
@@ -857,6 +915,8 @@ defmodule Radix do
 
   @doc """
   Get the key,value-pair whose key is the longest prefix of `key`.
+
+  Returns `{key, value}` or `nil` if there was no match.
 
   ## Example
 
@@ -876,14 +936,17 @@ defmodule Radix do
 
   """
   @spec lookup(tree, key) :: {key, value} | nil
-  def lookup({0, _, _} = tree, key) when is_bitstring(key),
-    do: lookupp(tree, key, bit_size(key))
+  def lookup({0, _, _} = tree, key) when is_bitstring(key) do
+    lookupp(tree, key, bit_size(key))
+  rescue
+    err -> raise err
+  end
 
   def lookup({0, _, _} = _tree, key),
-    do: raise(bad_key(key))
+    do: raise(arg_err(:bad_key, key))
 
   def lookup(tree, _key),
-    do: raise(bad_tree(tree))
+    do: raise(arg_err(:bad_tree, tree))
 
   @doc """
   Lookup given search `key` in `tree` and update the value of matched key with
@@ -891,7 +954,7 @@ defmodule Radix do
 
   If `key` has a longest prefix match in `tree` then its value is passed to
   `fun` and its result is used as the updated value of the *matching* key. If
-  `key` cannot be matched the {`default`, `key`}-pair is inserted in
+  `key` cannot be matched the {`key`, `default`}-pair is inserted in
   the `tree`.
 
   ## Example
@@ -915,21 +978,23 @@ defmodule Radix do
       nil -> put(tree, key, default)
       {k, value} -> put(tree, k, fun.(value))
     end
+  rescue
+    err -> raise err
   end
 
   def update(tree, key, _default, fun) when is_bitstring(key) and is_function(fun, 1),
-    do: raise(bad_tree(tree))
+    do: raise(arg_err(:bad_tree, tree))
 
   def update({0, _, _} = _tree, key, _val, fun) when is_bitstring(key),
-    do: raise(bad_fun(fun, 1))
+    do: raise(arg_err(:bad_fun, {fun, 1}))
 
   def update(_tree, key, _default, _fun),
-    do: raise(bad_key(key))
+    do: raise(arg_err(:bad_key, key))
 
   @doc """
-  Returns all key,value-pair(s) whose key is a prefix for the given search `key`.
+  Returns all key,value-pairs whose key is a prefix for the given search `key`.
 
-  Collects key,value-entries where the stored key is the same or less specific.
+  Collects key,value-pairs where the stored key is the same or less specific.
 
   ## Example
 
@@ -952,19 +1017,89 @@ defmodule Radix do
 
   """
   @spec less(tree, key) :: [{key, value}]
-  def less({0, _, _} = tree, key) when is_bitstring(key),
-    do: lessp(tree, key)
+  def less({0, _, _} = tree, key) when is_bitstring(key) do
+    lessp(tree, key)
+  rescue
+    err -> raise err
+  end
 
   def less({0, _, _} = _tree, key),
-    do: raise(bad_key(key))
+    do: raise(arg_err(:bad_key, key))
 
   def less(tree, _key),
-    do: raise(bad_tree(tree))
+    do: raise(arg_err(:bad_tree, tree))
 
   @doc """
-  Returns all key,value-pair(s) where the given search `key` is a prefix for a stored key.
+  Merges two radix trees into one.
 
-  Collects key,value-entries where the stored key is the same or more specific.
+  Adds all key,value-pairs of `tree2` to `tree1`, overwriting any existing entries.
+
+  ## Example
+
+      iex> tree1 = new([{<<0>>, 0}, {<<1>>, 1}])
+      iex> tree2 = new([{<<0>>, nil}, {<<2>>, 2}])
+      iex> merge(tree1, tree2)
+      ...> |> to_list()
+      [{<<0>>, nil}, {<<1>>, 1}, {<<2>>, 2}]
+
+  """
+  @spec merge(tree, tree) :: tree
+  def merge({0, _, _} = tree1, {0, _, _} = tree2) do
+    reduce(tree2, tree1, fn k, v, t -> put(t, k, v) end)
+  rescue
+    err -> raise err
+  end
+
+  def merge({0, _, _} = _tree1, tree2),
+    do: raise(arg_err(:bad_tree, tree2))
+
+  def merge(tree1, _),
+    do: raise(arg_err(:bad_tree, tree1))
+
+  @doc """
+  Merges two radix trees into one.
+
+  Adds all key,value-pairs of `tree2` to `tree1`, resolving conflicts through
+  given `fun`.  Its arguments are the conflicting `t:key/0` and the `t:value/0`
+  found in `tree1` and the `t:value/0` found in `tree2`.
+
+  ## Example
+
+      # keep values of tree1, like merge(tree2, tree1)
+      iex> tree1 = new([{<<0>>, 0}, {<<1>>, 1}])
+      iex> tree2 = new([{<<0>>, nil}, {<<2>>, 2}])
+      iex> merge(tree1, tree2, fn _k, v1, _v2 -> v1 end)
+      ...> |> to_list()
+      [{<<0>>, 0}, {<<1>>, 1}, {<<2>>, 2}]
+
+  """
+  @spec merge(tree, tree, (key, value, value -> value)) :: tree
+  def merge({0, _, _} = tree1, {0, _, _} = tree2, fun) when is_function(fun, 3) do
+    f = fn k2, v2, t1 ->
+      case get(t1, k2) do
+        {_k1, v1} -> put(t1, k2, fun.(k2, v1, v2))
+        nil -> put(t1, k2, v2)
+      end
+    end
+
+    reduce(tree2, tree1, f)
+  rescue
+    err -> raise err
+  end
+
+  def merge({0, _, _} = _tree1, {0, _, _} = _tree2, fun),
+    do: raise(arg_err(:bad_fun, {fun, 2}))
+
+  def merge({0, _, _} = _tree1, tree2, _fun),
+    do: raise(arg_err(:bad_tree, tree2))
+
+  def merge(tree1, _tree2, _fun),
+    do: raise(arg_err(:bad_tree, tree1))
+
+  @doc """
+  Returns all key,value-pairs where the given search `key` is a prefix for a stored key.
+
+  Collects key,value-pairs where the stored key is the same or more specific.
 
   ## Example
 
@@ -987,14 +1122,75 @@ defmodule Radix do
 
   """
   @spec more(tree, key) :: [{key, value}]
-  def more({0, _, _} = tree, key) when is_bitstring(key),
-    do: morep(tree, key)
+  def more({0, _, _} = tree, key) when is_bitstring(key) do
+    morep(tree, key)
+  rescue
+    err -> raise err
+  end
 
   def more({0, _, _} = _tree, key),
-    do: raise(bad_key(key))
+    do: raise(arg_err(:bad_key, key))
 
   def more(tree, _key),
-    do: raise(bad_tree(tree))
+    do: raise(arg_err(:bad_tree, tree))
+
+  @doc """
+  Removes the value associated with `key` and returns the matched
+  key,value-pair and the new tree.
+
+  Options include:
+  - `default: value`, returned if `key` could not be matched (defaults to nil)
+  - `match: :lpm`, specifies a longest prefix match instead of an exact match
+
+  If given search `key` was not matched, the tree is unchanged and the
+  key,value-pair will be the search `key` and the default value.
+
+  ## Examples
+
+      # pop an existing element
+      iex> new([{<<0>>, 0}, {<<1>>, 1}, {<<2>>, 2}])
+      ...> |> pop(<<1>>)
+      {
+        {<<1>>, 1},
+        {0, {6, [{<<0>>, 0}], [{<<2>>, 2}]}, nil}
+      }
+
+      # pop non-existing, using a default
+      iex> new([{<<0>>, 0}, {<<1>>, 1}, {<<2>>, 2}])
+      ...> |> pop(<<3>>, default: :notfound)
+      {
+        {<<3>>, :notfound},
+        {0, {6, {7, [{<<0>>, 0}], [{<<1>>, 1}]}, [{<<2>>, 2}]}, nil}
+      }
+
+      # pop using longest prefix match
+      iex> t = new([{<<1, 1, 1>>, "1.1.1.0/24"}, {<<1, 1, 1, 1::1>>, "1.1.1.128/25"}])
+      iex> pop(t, <<1, 1, 1, 255>>, match: :lpm)
+      {
+        {<<1, 1, 1, 1::1>>, "1.1.1.128/25"},
+        {0, [{<<1, 1, 1>>, "1.1.1.0/24"}], nil}
+      }
+
+  """
+  @spec pop(tree, key, keyword) :: {value, tree}
+  def pop(tree, key, opts \\ [])
+
+  def pop({0, _, _} = tree, key, opts) when is_bitstring(key) do
+    default = Keyword.get(opts, :default, nil)
+
+    case match(opts).(tree, key) do
+      nil -> {{key, default}, tree}
+      {k, v} -> {{k, v}, delete(tree, k)}
+    end
+  rescue
+    err -> raise err
+  end
+
+  def pop({0, _, _} = _tree, key, _opts),
+    do: raise(arg_err(:bad_key, key))
+
+  def pop(tree, _key, _opts),
+    do: raise(arg_err(:bad_tree, tree))
 
   @doc """
   Invokes `fun` for each key,value-pair in the radix `tree` with the accumulator.
@@ -1023,14 +1219,109 @@ defmodule Radix do
 
   """
   @spec reduce(tree, acc, (key, value, acc -> acc)) :: acc
-  def reduce({0, _, _} = tree, acc, fun) when is_function(fun, 3),
-    do: reducep(tree, acc, fun)
+  def reduce({0, _, _} = tree, acc, fun) when is_function(fun, 3) do
+    reducep(tree, acc, fun)
+  rescue
+    err -> raise err
+  end
 
   def reduce({0, _, _} = _tree, _acc, fun),
-    do: raise(bad_fun(fun, 3))
+    do: raise(arg_err(:bad_fun, {fun, 3}))
 
   def reduce(tree, _acc, _fun),
-    do: raise(bad_tree(tree))
+    do: raise(arg_err(:bad_tree, tree))
+
+  @doc """
+  Extract key,value-pairs from `tree` into a new radix tree.
+
+  Returns the new tree and the old tree with the key,value-pairs removed.
+  By default an exact match is used, specify `match: :lpm` to match based
+  on a longest prefix match.
+
+  If none of the given `keys` match, the new tree will be empty and the old
+  tree unchanged.
+
+  ## Examples
+
+      iex> tree = new([{<<0>>, 0}, {<<1>>, 1}, {<<2>>, 2}, {<<3>>, 3}])
+      iex> {t1, t2} = split(tree, [<<0>>, <<2>>])
+      iex>
+      iex> keys(t1)
+      [<<0>>, <<2>>]
+      iex>
+      iex> keys(t2)
+      [<<1>>, <<3>>]
+
+      iex> tree = new([{<<0>>, 0}, {<<1>>, 1}, {<<2>>, 2}, {<<3>>, 3}])
+      iex> {t1, t2} = split(tree, [<<0, 0>>, <<2, 0>>], match: :lpm)
+      iex>
+      iex> keys(t1)
+      [<<0>>, <<2>>]
+      iex>
+      iex> keys(t2)
+      [<<1>>, <<3>>]
+
+  """
+  @spec split(tree, [key], keyword) :: {tree, tree}
+  def split(tree, keys, opts \\ [])
+
+  def split({0, _, _} = tree, keys, opts) when is_list(keys) do
+    t = take(tree, keys, opts)
+    {t, drop(tree, keys(t))}
+  rescue
+    err -> raise err
+  end
+
+  def split({0, _, _} = _tree, keys, _opts),
+    do: raise(arg_err(:bad_keys, keys))
+
+  def split(tree, _keys, _opts),
+    do: raise(arg_err(:bad_tree, tree))
+
+  @doc """
+  Return a new tree with all the key,value-pairs whose key are in `keys`.
+
+  If a key in `keys` does not exist in `tree`, it is ignored.
+
+  By default keys are matched exactly, use the option `match: :lpm` to use
+  longest prefix matching.
+
+  ## Examples
+
+      iex> new([{<<>>, nil}, {<<0>>, 0}, {<<1>>, 1}, {<<128>>, 128}, {<<255>>, 255}])
+      ...> |> take([<<>>, <<1>>, <<255>>])
+      ...> |> to_list()
+      [{<<>>, nil}, {<<1>>, 1}, {<<255>>, 255}]
+
+      # longest prefix match
+      iex> new([{<<>>, nil}, {<<0>>, 0}, {<<1>>, 1}, {<<128>>, 128}, {<<255>>, 255}])
+      ...> |> take([<<2, 2, 2, 2>>, <<1, 1, 1, 1>>, <<255, 255, 0, 0>>], match: :lpm)
+      ...> |> to_list()
+      [{<<>>, nil}, {<<1>>, 1}, {<<255>>, 255}]
+
+  """
+  @spec take(tree, [key], keyword) :: tree
+  def take(tree, keys, opts \\ [])
+
+  def take({0, _, _} = tree, keys, opts) when is_list(keys) do
+    fun = fn k, t when is_bitstring(k) ->
+      case match(opts).(tree, k) do
+        nil -> t
+        {key, value} -> put(t, key, value)
+      end
+    end
+
+    Enum.reduce(keys, @empty, fun)
+  rescue
+    FunctionClauseError -> raise arg_err(:bad_keys, keys)
+    err -> raise err
+  end
+
+  def take({0, _, _} = _tree, keys, _opts),
+    do: raise(arg_err(:bad_keys, keys))
+
+  def take(tree, _keys, _opts),
+    do: raise(arg_err(:bad_tree, tree))
 
   @doc """
   Return all key,value-pairs as a flat list.
@@ -1058,10 +1349,12 @@ defmodule Radix do
     tree
     |> reducep([], fn k, v, acc -> [{k, v} | acc] end)
     |> Enum.reverse()
+  rescue
+    err -> raise err
   end
 
   def to_list(tree),
-    do: raise(bad_tree(tree))
+    do: raise(arg_err(:bad_tree, tree))
 
   @doc """
   Returns all keys from the radix `tree`.
@@ -1083,10 +1376,12 @@ defmodule Radix do
     tree
     |> reducep([], fn k, _v, acc -> [k | acc] end)
     |> Enum.reverse()
+  rescue
+    err -> raise err
   end
 
   def keys(tree),
-    do: raise(bad_tree(tree))
+    do: raise(arg_err(:bad_tree, tree))
 
   @doc """
   Returns all values from the radix `tree`.
@@ -1110,10 +1405,12 @@ defmodule Radix do
     tree
     |> reducep([], fn _k, v, acc -> [v | acc] end)
     |> Enum.reverse()
+  rescue
+    err -> raise err
   end
 
   def values(tree),
-    do: raise(bad_tree(tree))
+    do: raise(arg_err(:bad_tree, tree))
 
   @doc """
   Invokes `fun` on all (internal and leaf) nodes of the radix `tree` using either
@@ -1142,14 +1439,17 @@ defmodule Radix do
   @spec walk(tree, acc, (acc, tree | leaf -> acc), atom) :: acc
   def walk(tree, acc, fun, order \\ :inorder)
 
-  def walk({0, _, _} = tree, acc, fun, order) when is_function(fun, 2),
-    do: walkp(acc, fun, tree, order)
+  def walk({0, _, _} = tree, acc, fun, order) when is_function(fun, 2) do
+    walkp(acc, fun, tree, order)
+  rescue
+    err -> raise err
+  end
 
   def walk({0, _, _} = _tree, _acc, fun, _order),
-    do: raise(bad_fun(fun, 2))
+    do: raise(arg_err(:bad_fun, {fun, 2}))
 
   def walk(tree, _acc, _fun, _order),
-    do: raise(bad_tree(tree))
+    do: raise(arg_err(:bad_tree, tree))
 
   @doc ~S"""
   Given a tree, returns a list of lines describing the tree as a [graphviz](https://graphviz.org/) digraph.
@@ -1203,8 +1503,10 @@ defmodule Radix do
     |> annotate()
     |> dotify(opts)
     |> List.flatten()
+  rescue
+    err -> raise err
   end
 
   def dot(tree, _opts),
-    do: raise(bad_tree(tree))
+    do: raise(arg_err(:bad_tree, tree))
 end

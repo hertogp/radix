@@ -14,7 +14,7 @@ A bitwise radix tree for prefix based matching on bitstring keys of any length.
 Radix provides a [radix tree](https://en.wikipedia.org/wiki/Radix_tree) whose
 radius is 2, has path-compression and no one-way branching.  Entries consist of
 {key, value}-pairs whose insertion/deletion is always based on an exact
-key-match. Retrieval can be either exact or is based on a prefix match.
+key-match. Retrieval can be either exact or is based on a longest prefix match.
 
 
 ## Examples
@@ -61,7 +61,7 @@ The tree is represented by two types of nodes:
 - *internal node*, as a `{bit, left, right}`-tuple, and
 - *leaf node*, which is either `nil` or a non-empty list of `{key,value}`-pairs
 
-The `bit` denotes the bitposition to check in a key during a tree traversal,
+The `bit` denotes the bit position to check in a key during a tree traversal,
 where `0` means go `left` and `1` means go `right`.  A `bit` beyond a `key`'s
 length is considered to be `0`.  Path-compression means not all bits are
 checked during tree traversal, only those that differentiate the keys stored
@@ -97,8 +97,7 @@ is way faster.
 
 ## Installation
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `radix` to your list of dependencies in `mix.exs`:
+The package can be installed by adding `radix` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
@@ -108,7 +107,5 @@ def deps do
 end
 ```
 
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at [https://hexdocs.pm/radix](https://hexdocs.pm/radix).
+Documentation can be found at [https://hexdocs.pm/radix](https://hexdocs.pm/radix).
 
