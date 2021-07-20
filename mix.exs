@@ -43,7 +43,7 @@ defmodule Radix.MixProject do
       maintainers: ["hertogp"],
       links: %{
         "GitHub" => @source_url,
-        "Changelog" => "https://hexdocs/pm/radix/changelog.html"
+        "Changelog" => "https://hexdocs.pm/radix/changelog.html"
       }
     }
   end

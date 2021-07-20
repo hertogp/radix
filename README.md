@@ -1,4 +1,4 @@
-# README
+# Radix
 
 [![Test](https://github.com/hertogp/radix/actions/workflows/elixir.yml/badge.svg)](https://github.com/hertogp/radix/actions/workflows/elixir.yml)
 [![Module Version](https://img.shields.io/hexpm/v/radix.svg)](https://hex.pm/packages/radix)
@@ -97,7 +97,8 @@ is way faster.
 
 ## Installation
 
-The package can be installed by adding `radix` to your list of dependencies in `mix.exs`:
+[Radix](https://hexdocs.pm/radix) can be installed by adding `radix` to your
+list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
@@ -107,5 +108,8 @@ def deps do
 end
 ```
 
-Documentation can be found at [https://hexdocs.pm/radix](https://hexdocs.pm/radix).
+## Copyright and License
 
+Copyright (c) 2021 hertogp
+
+The source code is licensed under the [MIT License](./LICENSE.md).
