@@ -311,9 +311,6 @@ defmodule Radix do
     do: nil
 
   # key leads to leaf
-  # -TODO: validate leaf here and RAISE an exception (otherwise the exception
-  # becomes part of the tree ...
-  # now Radix.delete({0, 1, 2}, <<1>>) yields FunctionClauseError for List.keydelete ..
   defp deletep([{_, _} | _tail] = leaf, key) do
     case List.keydelete(leaf, key, 0) do
       [] -> nil
