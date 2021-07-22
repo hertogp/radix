@@ -349,6 +349,13 @@ defmodule Radix do
     end
   end
 
+  # get the longest prefix match for binary key
+  # - follow tree path using key and get longest match from the leaf found
+  # - more specific is to the right, less specific is to the left.
+  # so:
+  # - when left won't provide a match, the right will never match either
+  # - however, if the right won't match, the left might still match
+
   @spec lookupp(tree | leaf, key, non_neg_integer) :: {key, value} | nil
   defp lookupp({b, l, r} = _tree, key, kmax) when b < kmax do
     <<_::size(b), bit::1, _::bitstring>> = key
@@ -603,42 +610,6 @@ defmodule Radix do
   # API
 
   @doc """
-  Return a new, empty radix tree.
-
-  ## Example
-
-      iex> new()
-      {0, nil, nil}
-
-  """
-  @spec new :: tree
-  def new,
-    do: @empty
-
-  @doc """
-  Return a new radix tree, initialized using given list of {`key`, `value`}-pairs.
-
-  ## Example
-
-      iex> elements = [{<<1, 1>>, 16}, {<<1, 1, 1, 1>>, 32}, {<<1, 1, 0>>, 24}]
-      iex> new(elements)
-      {0,
-        {23, [{<<1, 1, 0>>, 24}, {<<1, 1>>, 16}],
-             [{<<1, 1, 1, 1>>, 32}]},
-        nil
-      }
-  """
-  @spec new([{key, value}]) :: tree
-  def new(elements) when is_list(elements) do
-    Enum.reduce(elements, @empty, fn {k, v}, t when is_bitstring(k) -> put(t, k, v) end)
-  rescue
-    FunctionClauseError -> raise arg_err(:bad_keyvals, elements)
-  end
-
-  def new(elements),
-    do: raise(arg_err(:bad_keyvals, elements))
-
-  @doc """
   Counts the number of entries by traversing given `tree`.
 
   ## Example
@@ -655,191 +626,7 @@ defmodule Radix do
   end
 
   @doc """
-  Say whether given `tree` is empty or not.
-
-  ## Example
-
-      iex> new() |> empty?()
-      true
-
-  """
-  @spec empty?(tree) :: boolean
-  def empty?({0, _, _} = tree),
-    do: tree == @empty
-
-  def empty?(tree),
-    do: raise(error(:badtree, tree))
-
-  @doc """
-  Fetches the key,value-pair for a specific `key` in the given `tree`.
-
-  Returns `{:ok, {key, value}}` or `:error` when `key` is not in the `tree`.  By
-  default an exact match is used, specify `match: :lpm` to fetch based on a
-  longest prefix match.
-
-  ## Example
-
-      iex> t = new([{<<>>, 0}, {<<1>>, 1}, {<<1, 1>>, 2}])
-      iex> fetch(t, <<1, 1>>)
-      {:ok, {<<1, 1>>, 2}}
-      iex>
-      iex> fetch(t, <<2>>)
-      :error
-      iex> fetch(t, <<2>>, match: :lpm)
-      {:ok, {<<>>, 0}}
-
-  """
-  @spec fetch(tree, key, keyword) :: {:ok, {key, value}} | :error
-  def fetch(tree, key, opts \\ []) do
-    case match(opts).(tree, key) do
-      # case get(tree, key) do
-      {k, v} -> {:ok, {k, v}}
-      _ -> :error
-    end
-  rescue
-    err -> raise err
-  end
-
-  @doc """
-  Fetches the key,value-pair for a specific `key` in the given `tree`.
-
-  Returns the `{key, value}`-pair itself, or raises a `KeyError` if `key` is
-  not in the `tree`.  By default an exact match is used, specify `match: :lpm`
-  to fetch based on a longest prefix match.
-
-  ## Example
-
-      iex> t = new([{<<1>>, 1}, {<<1, 1>>, 2}])
-      iex> fetch!(t, <<1, 1>>)
-      {<<1, 1>>, 2}
-      iex>
-      iex> fetch!(t, <<2>>)
-      ** (KeyError) key not found <<0b10>>
-      iex>
-      iex> fetch!(t, <<1, 1, 1>>, match: :lpm)
-      {<<1, 1>>, 2}
-
-  """
-  @spec fetch!(tree, key, keyword) :: {key, value}
-  def fetch!(tree, key, opts \\ []) do
-    case match(opts).(tree, key) do
-      {k, v} -> {k, v}
-      nil -> raise KeyError, "key not found #{inspect(key, base: :binary)}"
-    end
-  rescue
-    err -> raise err
-  end
-
-  @doc """
-  Get the key,value-pair whose key equals the given search `key`.
-
-  If `key` is not a bitstring or not present in the radix tree, `default` is
-  returned. If `default` is not provided, `nil` is used.
-
-
-  ## Example
-
-      iex> elements = [{<<1, 1>>, 16}, {<<1, 1, 1>>, 24}, {<<1, 1, 1, 1>>, 32}]
-      iex> t = new(elements)
-      iex> get(t, <<1, 1, 1>>)
-      {<<1, 1, 1>>, 24}
-      iex> get(t, <<1, 1>>)
-      {<<1, 1>>, 16}
-      iex> get(t, <<1, 1, 0::1>>)
-      nil
-      iex> get(t, <<1, 1, 0::1>>, "oops")
-      "oops"
-
-  """
-  @spec get(tree, key, any) :: {key, value} | any
-  def get(tree, key, default \\ nil)
-
-  def get({0, _, _} = tree, key, default) when is_bitstring(key) do
-    kmax = bit_size(key)
-
-    tree
-    |> leaf(key, kmax)
-    |> keyget(key, kmax) || default
-  rescue
-    err -> raise err
-  end
-
-  def get({0, _, _} = _tree, key, _default),
-    do: raise(arg_err(:bad_key, key))
-
-  def get(tree, _key, _default),
-    do: raise(arg_err(:bad_tree, tree))
-
-  @doc """
-  Stores the key,value-pairs from `elements` in the radix `tree`.
-
-  Any existing `key`'s will have their `value`'s replaced.
-
-  ## Examples
-
-      iex> elements = [{<<1, 1>>, "1.1.0.0/16"}, {<<1, 1, 1, 1>>, "1.1.1.1"}]
-      iex> new() |> put(elements)
-      {0,
-        {23, [{<<1, 1>>, "1.1.0.0/16"}],
-             [{<<1, 1, 1, 1>>, "1.1.1.1"}]},
-        nil
-      }
-
-  """
-  @spec put(tree, [{key, value}]) :: tree
-  def put({0, _, _} = tree, elements) when is_list(elements) do
-    Enum.reduce(elements, tree, fn {k, v}, t when is_bitstring(k) -> put(t, k, v) end)
-  rescue
-    FunctionClauseError -> raise arg_err(:bad_keyvals, elements)
-    err -> raise err
-  end
-
-  def put({0, _, _} = _tree, elements),
-    do: raise(arg_err(:bad_keyvals, elements))
-
-  def put(tree, _elements),
-    do: raise(arg_err(:bad_tree, tree))
-
-  @doc """
-  Stores the `key`,`value`-pair under `key` in the radix `tree`.
-
-  Any existing `key` will have its `value` replaced.
-
-  ## Examples
-
-      iex> t = new()
-      ...>  |> put(<<1, 1>>, "1.1.0.0/16")
-      ...>  |> put(<<1, 1, 1, 1>>, "x.x.x.x")
-      iex> t
-      {0,
-        {23, [{<<1, 1>>, "1.1.0.0/16"}],
-             [{<<1, 1, 1, 1>>, "x.x.x.x"}]},
-        nil
-      }
-      #
-      iex> put(t, <<1, 1, 1, 1>>, "1.1.1.1")
-      {0,
-        {23, [{<<1, 1>>, "1.1.0.0/16"}],
-             [{<<1, 1, 1, 1>>, "1.1.1.1"}]},
-        nil
-      }
-
-  """
-  @spec put(tree, key, value) :: tree
-  def put({0, _, _} = tree, key, value) when is_bitstring(key) do
-    putp(tree, keypos(tree, key), key, value)
-  rescue
-    err -> raise err
-  end
-
-  def put({0, _, _} = _tree, key, _value),
-    do: raise(arg_err(:bad_key, key))
-
-  def put(tree, _key, _value),
-    do: raise(arg_err(:bad_tree, tree))
-
-  @doc """
-  Delete the entry from the `tree` for a specific `key` using an exact match.
+  Deletes the entry from the `tree` for a specific `key` using an exact match.
 
   If `key` does not exist, the `tree` is returned unchanged.
 
@@ -906,90 +693,208 @@ defmodule Radix do
   def drop(tree, _keys),
     do: raise(arg_err(:bad_tree, tree))
 
-  # get the longest prefix match for binary key
-  # - follow tree path using key and get longest match from the leaf found
-  # - more specific is to the right, less specific is to the left.
-  # so:
-  # - when left won't provide a match, the right will never match either
-  # - however, if the right won't match, the left might still match
+  @doc ~S"""
+  Returns a list of lines describing the `tree` as a [graphviz](https://graphviz.org/) digraph.
 
-  @doc """
-  Get the key,value-pair whose key is the longest prefix of `key`.
+  Options include:
+  - `:label`, defaults to "radix")
+  - `:labelloc`, defaults to "t"
+  - `:rankdir`, defaults to "TB"
+  - `:ranksep`, defaults to "0.5 equally"
+  - `:rootcolor`, defaults to "orange"
+  - `:nodecolor`, defaults to "yellow"
+  - `:leafcolor`, defaults to "green"
+  - `:kv_tostr`, defaults to an internal function that converts key to dotted decimal string (cidr style)
 
-  Returns `{key, value}` or `nil` if there was no match.
+  If supplied via `:kv_tostr`, the function's signature must be ({`t:key/0`, `t:value/0`}) :: `t:String.t/0`
+  and where the resulting string must be HTML-escaped.  See [html-entities](https://graphviz.org/doc/char.html).
 
-  ## Example
-
-      iex> elms = [{<<1, 1>>, 16}, {<<1, 1, 0>>, 24}, {<<1, 1, 0, 0::1>>, 25}]
-      iex> t = new(elms)
-      iex> lookup(t, <<1, 1, 0, 127>>)
-      {<<1, 1, 0, 0::1>>, 25}
-      #
-      iex> lookup(t, <<1, 1, 0, 128>>)
-      {<<1, 1, 0>>, 24}
-      #
-      iex> lookup(t, <<1, 1, 1, 1>>)
-      {<<1, 1>>, 16}
-      #
-      iex> lookup(t, <<2, 2, 2, 2>>)
-      nil
-
-  """
-  @spec lookup(tree, key) :: {key, value} | nil
-  def lookup({0, _, _} = tree, key) when is_bitstring(key) do
-    lookupp(tree, key, bit_size(key))
-  rescue
-    err -> raise err
-  end
-
-  def lookup({0, _, _} = _tree, key),
-    do: raise(arg_err(:bad_key, key))
-
-  def lookup(tree, _key),
-    do: raise(arg_err(:bad_tree, tree))
-
-  @doc """
-  Lookup given search `key` in `tree` and update the value of matched key with
-  the given function.
-
-  If `key` has a longest prefix match in `tree` then its value is passed to
-  `fun` and its result is used as the updated value of the *matching* key. If
-  `key` cannot be matched the {`key`, `default`}-pair is inserted in
-  the `tree`.
+  Works best for smaller trees.
 
   ## Example
 
       iex> t = new()
-      iex> t = update(t, <<1, 1, 1>>, 1, fn x -> x+1 end)
-      iex> t
-      {0, [{<<1, 1, 1>>, 1}], nil}
-      iex> t = update(t, <<1, 1, 1, 0>>, 1, fn x -> x+1 end)
-      iex> t
-      {0, [{<<1, 1, 1>>, 2}], nil}
-      iex> t = update(t, <<1, 1, 1, 255>>, 1, fn x -> x+1 end)
-      iex> t
-      {0, [{<<1, 1, 1>>, 3}], nil}
+      ...> |> put(<<0, 0>>, "left")
+      ...> |> put(<<1, 1, 1::1>>, "left")
+      ...> |> put(<<128, 0>>, "right")
+      iex> g = dot(t, label: "example")
+      ["digraph Radix {\n  labelloc=\"t\";\n  label=\"example\";\n  rankdir=\"TB\";\n  ranksep=\"0.5 equally\";\n",
+        "N4 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N4\" BGCOLOR=\"green\">leaf</TD></TR>\n    <TR><TD>128.0/16</TD></TR>\n  </TABLE>\n  >, shape=\"plaintext\"];\n",
+        "N2 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N2\" BGCOLOR=\"green\">leaf</TD></TR>\n    <TR><TD>1.1.128/17</TD></TR>\n  </TABLE>\n  >, shape=\"plaintext\"];\n",
+        "N1 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N1\" BGCOLOR=\"green\">leaf</TD></TR>\n    <TR><TD>0.0/16</TD></TR>\n  </TABLE>\n  >, shape=\"plaintext\"];\n",
+        "N3:R -> N2;\n",
+        "N3:L -> N1;\n",
+        "N3 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N3\" COLSPAN=\"2\" BGCOLOR=\"yellow\">bit 7</TD></TR>\n    <TR><TD PORT=\"L\">0</TD><TD PORT=\"R\">1</TD></TR>\n  </TABLE>\n>, shape=\"plaintext\"];\n",
+        "N5:R -> N4;\n",
+        "N5:L -> N3;\n",
+        "N5 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N5\" COLSPAN=\"2\" BGCOLOR=\"orange\">bit 0</TD></TR>\n    <TR><TD PORT=\"L\">0</TD><TD PORT=\"R\">1</TD></TR>\n  </TABLE>\n>, shape=\"plaintext\"];\n",
+        "}"]
+      iex> File.write("assets/example.dot", g)
+      :ok
+
+   which, after converting with `dot`, yields the following image:
+
+   ![example](assets/example.dot.png)
 
   """
-  @spec update(tree, key, value, (value -> value)) :: tree
-  def update({0, _, _} = tree, key, default, fun)
-      when is_bitstring(key) and is_function(fun, 1) do
-    case lookup(tree, key) do
-      nil -> put(tree, key, default)
-      {k, value} -> put(tree, k, fun.(value))
+  @spec dot(tree, keyword()) :: list(String.t())
+  def dot(tree, opts \\ [])
+
+  def dot({0, _, _} = tree, opts) do
+    tree
+    |> annotate()
+    |> dotify(opts)
+    |> List.flatten()
+  rescue
+    err -> raise err
+  end
+
+  def dot(tree, _opts),
+    do: raise(arg_err(:bad_tree, tree))
+
+  @doc """
+  Returns true if `tree` is empty, false otherwise.
+
+  ## Example
+
+      iex> new() |> empty?()
+      true
+
+  """
+  @spec empty?(tree) :: boolean
+  def empty?({0, _, _} = tree),
+    do: tree == @empty
+
+  def empty?(tree),
+    do: raise(error(:badtree, tree))
+
+  @doc """
+  Fetches the key,value-pair for a `key` in the given `tree`.
+
+  Returns `{:ok, {key, value}}` or `:error` when `key` is not in the `tree`.  By
+  default an exact match is used, specify `match: :lpm` to fetch based on a
+  longest prefix match.
+
+  ## Example
+
+      iex> t = new([{<<>>, 0}, {<<1>>, 1}, {<<1, 1>>, 2}])
+      iex> fetch(t, <<1, 1>>)
+      {:ok, {<<1, 1>>, 2}}
+      iex>
+      iex> fetch(t, <<2>>)
+      :error
+      iex> fetch(t, <<2>>, match: :lpm)
+      {:ok, {<<>>, 0}}
+
+  """
+  @spec fetch(tree, key, keyword) :: {:ok, {key, value}} | :error
+  def fetch(tree, key, opts \\ []) do
+    case match(opts).(tree, key) do
+      # case get(tree, key) do
+      {k, v} -> {:ok, {k, v}}
+      _ -> :error
     end
   rescue
     err -> raise err
   end
 
-  def update(tree, key, _default, fun) when is_bitstring(key) and is_function(fun, 1),
+  @doc """
+  Fetches the key,value-pair for a specific `key` in the given `tree`.
+
+  Returns the `{key, value}`-pair itself, or raises a `KeyError` if `key` is
+  not in the `tree`.  By default an exact match is used, specify `match: :lpm`
+  to fetch based on a longest prefix match.
+
+  ## Example
+
+      iex> t = new([{<<1>>, 1}, {<<1, 1>>, 2}])
+      iex> fetch!(t, <<1, 1>>)
+      {<<1, 1>>, 2}
+      iex>
+      iex> fetch!(t, <<2>>)
+      ** (KeyError) key not found <<0b10>>
+      iex>
+      iex> fetch!(t, <<1, 1, 1>>, match: :lpm)
+      {<<1, 1>>, 2}
+
+  """
+  @spec fetch!(tree, key, keyword) :: {key, value}
+  def fetch!(tree, key, opts \\ []) do
+    case match(opts).(tree, key) do
+      {k, v} -> {k, v}
+      nil -> raise KeyError, "key not found #{inspect(key, base: :binary)}"
+    end
+  rescue
+    err -> raise err
+  end
+
+  @doc """
+  Returns the key,value-pair whose key equals the given search `key`, or
+  `default`.
+
+  If `key` is not a bitstring or not present in the radix tree, `default` is
+  returned. If `default` is not provided, `nil` is used.
+
+
+  ## Example
+
+      iex> elements = [{<<1, 1>>, 16}, {<<1, 1, 1>>, 24}, {<<1, 1, 1, 1>>, 32}]
+      iex> t = new(elements)
+      iex> get(t, <<1, 1, 1>>)
+      {<<1, 1, 1>>, 24}
+      iex> get(t, <<1, 1>>)
+      {<<1, 1>>, 16}
+      iex> get(t, <<1, 1, 0::1>>)
+      nil
+      iex> get(t, <<1, 1, 0::1>>, "oops")
+      "oops"
+
+  """
+  @spec get(tree, key, any) :: {key, value} | any
+  def get(tree, key, default \\ nil)
+
+  def get({0, _, _} = tree, key, default) when is_bitstring(key) do
+    kmax = bit_size(key)
+
+    tree
+    |> leaf(key, kmax)
+    |> keyget(key, kmax) || default
+  rescue
+    err -> raise err
+  end
+
+  def get({0, _, _} = _tree, key, _default),
+    do: raise(arg_err(:bad_key, key))
+
+  def get(tree, _key, _default),
     do: raise(arg_err(:bad_tree, tree))
 
-  def update({0, _, _} = _tree, key, _val, fun) when is_bitstring(key),
-    do: raise(arg_err(:bad_fun, {fun, 1}))
+  @doc """
+  Returns a list of all keys from the radix `tree`.
 
-  def update(_tree, key, _default, _fun),
-    do: raise(arg_err(:bad_key, key))
+  ## Example
+
+      iex> t = new([
+      ...>  {<<1, 1, 1, 0::1>>, "1.1.1.0/25"},
+      ...>  {<<1, 1, 1, 1::1>>, "1.1.1.128/25"},
+      ...>  {<<1, 1, 1>>, "1.1.1.0/24"},
+      ...>  {<<3>>, "3.0.0.0/8"},
+      ...>  ])
+      iex>
+      iex> keys(t)
+      [<<1, 1, 1, 0::1>>, <<1, 1, 1>>, <<1, 1, 1, 1::1>>, <<3>>]
+  """
+  @spec keys(tree) :: [key]
+  def keys({0, _, _} = tree) do
+    tree
+    |> reducep([], fn k, _v, acc -> [k | acc] end)
+    |> Enum.reverse()
+  rescue
+    err -> raise err
+  end
+
+  def keys(tree),
+    do: raise(arg_err(:bad_tree, tree))
 
   @doc """
   Returns all key,value-pairs whose key is a prefix for the given search `key`.
@@ -1030,6 +935,41 @@ defmodule Radix do
     do: raise(arg_err(:bad_tree, tree))
 
   @doc """
+  Returns the key,value-pair whose key is the longest prefix of `key`, or nil.
+
+  Returns `{key, value}` or `nil` if there was no match.
+
+  ## Example
+
+      iex> elms = [{<<1, 1>>, 16}, {<<1, 1, 0>>, 24}, {<<1, 1, 0, 0::1>>, 25}]
+      iex> t = new(elms)
+      iex> lookup(t, <<1, 1, 0, 127>>)
+      {<<1, 1, 0, 0::1>>, 25}
+      #
+      iex> lookup(t, <<1, 1, 0, 128>>)
+      {<<1, 1, 0>>, 24}
+      #
+      iex> lookup(t, <<1, 1, 1, 1>>)
+      {<<1, 1>>, 16}
+      #
+      iex> lookup(t, <<2, 2, 2, 2>>)
+      nil
+
+  """
+  @spec lookup(tree, key) :: {key, value} | nil
+  def lookup({0, _, _} = tree, key) when is_bitstring(key) do
+    lookupp(tree, key, bit_size(key))
+  rescue
+    err -> raise err
+  end
+
+  def lookup({0, _, _} = _tree, key),
+    do: raise(arg_err(:bad_key, key))
+
+  def lookup(tree, _key),
+    do: raise(arg_err(:bad_tree, tree))
+
+  @doc """
   Merges two radix trees into one.
 
   Adds all key,value-pairs of `tree2` to `tree1`, overwriting any existing entries.
@@ -1057,7 +997,7 @@ defmodule Radix do
     do: raise(arg_err(:bad_tree, tree1))
 
   @doc """
-  Merges two radix trees into one.
+  Merges two radix trees into one, resolving conflicts through `fun`.
 
   Adds all key,value-pairs of `tree2` to `tree1`, resolving conflicts through
   given `fun`.  Its arguments are the conflicting `t:key/0` and the `t:value/0`
@@ -1135,6 +1075,42 @@ defmodule Radix do
     do: raise(arg_err(:bad_tree, tree))
 
   @doc """
+  Returns a new, empty radix tree.
+
+  ## Example
+
+      iex> new()
+      {0, nil, nil}
+
+  """
+  @spec new :: tree
+  def new(),
+    do: @empty
+
+  @doc """
+  Return a new radix tree, initialized using given list of {`key`, `value`}-pairs.
+
+  ## Example
+
+      iex> elements = [{<<1, 1>>, 16}, {<<1, 1, 1, 1>>, 32}, {<<1, 1, 0>>, 24}]
+      iex> new(elements)
+      {0,
+        {23, [{<<1, 1, 0>>, 24}, {<<1, 1>>, 16}],
+             [{<<1, 1, 1, 1>>, 32}]},
+        nil
+      }
+  """
+  @spec new([{key, value}]) :: tree
+  def new(elements) when is_list(elements) do
+    Enum.reduce(elements, @empty, fn {k, v}, t when is_bitstring(k) -> put(t, k, v) end)
+  rescue
+    FunctionClauseError -> raise arg_err(:bad_keyvals, elements)
+  end
+
+  def new(elements),
+    do: raise(arg_err(:bad_keyvals, elements))
+
+  @doc """
   Removes the value associated with `key` and returns the matched
   key,value-pair and the new tree.
 
@@ -1193,6 +1169,74 @@ defmodule Radix do
     do: raise(arg_err(:bad_tree, tree))
 
   @doc """
+  Stores the key,value-pairs from `elements` in the radix `tree`.
+
+  Any existing `key`'s will have their `value`'s replaced.
+
+  ## Examples
+
+      iex> elements = [{<<1, 1>>, "1.1.0.0/16"}, {<<1, 1, 1, 1>>, "1.1.1.1"}]
+      iex> new() |> put(elements)
+      {0,
+        {23, [{<<1, 1>>, "1.1.0.0/16"}],
+             [{<<1, 1, 1, 1>>, "1.1.1.1"}]},
+        nil
+      }
+
+  """
+  @spec put(tree, [{key, value}]) :: tree
+  def put({0, _, _} = tree, elements) when is_list(elements) do
+    Enum.reduce(elements, tree, fn {k, v}, t when is_bitstring(k) -> put(t, k, v) end)
+  rescue
+    FunctionClauseError -> raise arg_err(:bad_keyvals, elements)
+    err -> raise err
+  end
+
+  def put({0, _, _} = _tree, elements),
+    do: raise(arg_err(:bad_keyvals, elements))
+
+  def put(tree, _elements),
+    do: raise(arg_err(:bad_tree, tree))
+
+  @doc """
+  Stores the key,value-pair under `key` in the radix `tree`.
+
+  Any existing `key` will have its `value` replaced.
+
+  ## Examples
+
+      iex> t = new()
+      ...>  |> put(<<1, 1>>, "1.1.0.0/16")
+      ...>  |> put(<<1, 1, 1, 1>>, "x.x.x.x")
+      iex> t
+      {0,
+        {23, [{<<1, 1>>, "1.1.0.0/16"}],
+             [{<<1, 1, 1, 1>>, "x.x.x.x"}]},
+        nil
+      }
+      #
+      iex> put(t, <<1, 1, 1, 1>>, "1.1.1.1")
+      {0,
+        {23, [{<<1, 1>>, "1.1.0.0/16"}],
+             [{<<1, 1, 1, 1>>, "1.1.1.1"}]},
+        nil
+      }
+
+  """
+  @spec put(tree, key, value) :: tree
+  def put({0, _, _} = tree, key, value) when is_bitstring(key) do
+    putp(tree, keypos(tree, key), key, value)
+  rescue
+    err -> raise err
+  end
+
+  def put({0, _, _} = _tree, key, _value),
+    do: raise(arg_err(:bad_key, key))
+
+  def put(tree, _key, _value),
+    do: raise(arg_err(:bad_tree, tree))
+
+  @doc """
   Invokes `fun` for each key,value-pair in the radix `tree` with the accumulator.
 
   The initial value of the accumulator is `acc`. The function is invoked for
@@ -1232,7 +1276,8 @@ defmodule Radix do
     do: raise(arg_err(:bad_tree, tree))
 
   @doc """
-  Extract key,value-pairs from `tree` into a new radix tree.
+  Extracts the key,value-pairs associated with `keys` from `tree` into a new
+  radix tree.
 
   Returns the new tree and the old tree with the key,value-pairs removed.
   By default an exact match is used, specify `match: :lpm` to match based
@@ -1279,7 +1324,7 @@ defmodule Radix do
     do: raise(arg_err(:bad_tree, tree))
 
   @doc """
-  Return a new tree with all the key,value-pairs whose key are in `keys`.
+  Returns a new tree with all the key,value-pairs whose key are in `keys`.
 
   If a key in `keys` does not exist in `tree`, it is ignored.
 
@@ -1324,7 +1369,7 @@ defmodule Radix do
     do: raise(arg_err(:bad_tree, tree))
 
   @doc """
-  Return all key,value-pairs as a flat list.
+  Returns all key,value-pairs in `tree` as a flat list.
 
   ## Example
 
@@ -1357,34 +1402,50 @@ defmodule Radix do
     do: raise(arg_err(:bad_tree, tree))
 
   @doc """
-  Returns all keys from the radix `tree`.
+  Looks up the longest prefix match for given search `key` in `tree` and
+  updates its value through `fun`.
+
+  If `key` has a longest prefix match in `tree` then its value is passed to
+  `fun` and its result is used as the updated value of the *matching* key. If
+  `key` cannot be matched the {`key`, `default`}-pair is inserted in
+  the `tree`.
 
   ## Example
 
-      iex> t = new([
-      ...>  {<<1, 1, 1, 0::1>>, "1.1.1.0/25"},
-      ...>  {<<1, 1, 1, 1::1>>, "1.1.1.128/25"},
-      ...>  {<<1, 1, 1>>, "1.1.1.0/24"},
-      ...>  {<<3>>, "3.0.0.0/8"},
-      ...>  ])
-      iex>
-      iex> keys(t)
-      [<<1, 1, 1, 0::1>>, <<1, 1, 1>>, <<1, 1, 1, 1::1>>, <<3>>]
+      iex> t = new()
+      iex> t = update(t, <<1, 1, 1>>, 1, fn x -> x+1 end)
+      iex> t
+      {0, [{<<1, 1, 1>>, 1}], nil}
+      iex> t = update(t, <<1, 1, 1, 0>>, 1, fn x -> x+1 end)
+      iex> t
+      {0, [{<<1, 1, 1>>, 2}], nil}
+      iex> t = update(t, <<1, 1, 1, 255>>, 1, fn x -> x+1 end)
+      iex> t
+      {0, [{<<1, 1, 1>>, 3}], nil}
+
   """
-  @spec keys(tree) :: [key]
-  def keys({0, _, _} = tree) do
-    tree
-    |> reducep([], fn k, _v, acc -> [k | acc] end)
-    |> Enum.reverse()
+  @spec update(tree, key, value, (value -> value)) :: tree
+  def update({0, _, _} = tree, key, default, fun)
+      when is_bitstring(key) and is_function(fun, 1) do
+    case lookup(tree, key) do
+      nil -> put(tree, key, default)
+      {k, value} -> put(tree, k, fun.(value))
+    end
   rescue
     err -> raise err
   end
 
-  def keys(tree),
+  def update(tree, key, _default, fun) when is_bitstring(key) and is_function(fun, 1),
     do: raise(arg_err(:bad_tree, tree))
 
+  def update({0, _, _} = _tree, key, _val, fun) when is_bitstring(key),
+    do: raise(arg_err(:bad_fun, {fun, 1}))
+
+  def update(_tree, key, _default, _fun),
+    do: raise(arg_err(:bad_key, key))
+
   @doc """
-  Returns all values from the radix `tree`.
+  Returns all values stored in the radix `tree`.
 
   ## Example
 
@@ -1449,64 +1510,5 @@ defmodule Radix do
     do: raise(arg_err(:bad_fun, {fun, 2}))
 
   def walk(tree, _acc, _fun, _order),
-    do: raise(arg_err(:bad_tree, tree))
-
-  @doc ~S"""
-  Given a tree, returns a list of lines describing the tree as a [graphviz](https://graphviz.org/) digraph.
-
-  Options include:
-  - `:label`, defaults to "radix")
-  - `:labelloc`, defaults to "t"
-  - `:rankdir`, defaults to "TB"
-  - `:ranksep`, defaults to "0.5 equally"
-  - `:rootcolor`, defaults to "orange"
-  - `:nodecolor`, defaults to "yellow"
-  - `:leafcolor`, defaults to "green"
-  - `:kv_tostr`, defaults to an internal function that converts key to dotted decimal string (cidr style)
-
-  If supplied via `:kv_tostr`, the function's signature must be ({`t:key/0`, `t:value/0`}) :: `t:String.t/0`
-  and where the resulting string must be HTML-escaped.  See [html-entities](https://graphviz.org/doc/char.html).
-
-  Works best for smaller trees.
-
-  ## Example
-
-      iex> t = new()
-      ...> |> put(<<0, 0>>, "left")
-      ...> |> put(<<1, 1, 1::1>>, "left")
-      ...> |> put(<<128, 0>>, "right")
-      iex> g = dot(t, label: "example")
-      ["digraph Radix {\n  labelloc=\"t\";\n  label=\"example\";\n  rankdir=\"TB\";\n  ranksep=\"0.5 equally\";\n",
-        "N4 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N4\" BGCOLOR=\"green\">leaf</TD></TR>\n    <TR><TD>128.0/16</TD></TR>\n  </TABLE>\n  >, shape=\"plaintext\"];\n",
-        "N2 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N2\" BGCOLOR=\"green\">leaf</TD></TR>\n    <TR><TD>1.1.128/17</TD></TR>\n  </TABLE>\n  >, shape=\"plaintext\"];\n",
-        "N1 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N1\" BGCOLOR=\"green\">leaf</TD></TR>\n    <TR><TD>0.0/16</TD></TR>\n  </TABLE>\n  >, shape=\"plaintext\"];\n",
-        "N3:R -> N2;\n",
-        "N3:L -> N1;\n",
-        "N3 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N3\" COLSPAN=\"2\" BGCOLOR=\"yellow\">bit 7</TD></TR>\n    <TR><TD PORT=\"L\">0</TD><TD PORT=\"R\">1</TD></TR>\n  </TABLE>\n>, shape=\"plaintext\"];\n",
-        "N5:R -> N4;\n",
-        "N5:L -> N3;\n",
-        "N5 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N5\" COLSPAN=\"2\" BGCOLOR=\"orange\">bit 0</TD></TR>\n    <TR><TD PORT=\"L\">0</TD><TD PORT=\"R\">1</TD></TR>\n  </TABLE>\n>, shape=\"plaintext\"];\n",
-        "}"]
-      iex> File.write("assets/example.dot", g)
-      :ok
-
-   which, after converting with `dot`, yields the following image:
-
-   ![example](assets/example.dot.png)
-
-  """
-  @spec dot(tree, keyword()) :: list(String.t())
-  def dot(tree, opts \\ [])
-
-  def dot({0, _, _} = tree, opts) do
-    tree
-    |> annotate()
-    |> dotify(opts)
-    |> List.flatten()
-  rescue
-    err -> raise err
-  end
-
-  def dot(tree, _opts),
     do: raise(arg_err(:bad_tree, tree))
 end
