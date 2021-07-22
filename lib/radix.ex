@@ -157,9 +157,11 @@ defmodule Radix do
     end
   end
 
+  # go left on masked off bits
   defp leaf({_, l, _}, key, max),
     do: leaf(l, key, max)
 
+  # not a tuple, so it's a leaf
   defp leaf(leaf, _key, _max),
     do: leaf
 
