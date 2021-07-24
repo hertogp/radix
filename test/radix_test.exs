@@ -310,7 +310,7 @@ defmodule RadixTest do
 
   # Radix.delete/2
   test "delete/2 uses exact match" do
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> delete(t, key) end)
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> delete(t, <<>>) end)
 
     t =
       new()
