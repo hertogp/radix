@@ -956,6 +956,7 @@ defmodule Radix do
       ...>  ])
       iex> keys(t)
       [<<1, 1, 1, 0::1>>, <<1, 1, 1>>, <<1, 1, 1, 1::1>>, <<3>>]
+
   """
   @spec keys(tree) :: [key]
   def keys({0, _, _} = tree) do
@@ -1333,7 +1334,7 @@ defmodule Radix do
 
   Any existing `key`'s will have their `value`'s replaced.
 
-  ## Examples
+  ## Example
 
       iex> elements = [{<<1, 1>>, "1.1.0.0/16"}, {<<1, 1, 1, 1>>, "1.1.1.1"}]
       iex> new()
@@ -1364,7 +1365,7 @@ defmodule Radix do
 
   Any existing `key` will have its `value` replaced.
 
-  ## Examples
+  ## Example
 
       iex> t = new()
       ...>  |> put(<<1, 1>>, "1.1.0.0/16")
@@ -1674,6 +1675,7 @@ defmodule Radix do
       ...>  ])
       ...> |> values()
       ["1.1.1.0/25", "1.1.1.0/24", "1.1.1.128/25", "3.0.0.0/8"]
+
   """
   @spec values(tree) :: [value]
   def values({0, _, _} = tree) do
