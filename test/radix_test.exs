@@ -17,9 +17,6 @@ defmodule RadixTest do
     fun2 = fn _, _ -> nil end
     fun3 = fn _, _, _ -> nil end
 
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> count(t) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> delete(t, key) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> dot(t) end)
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> drop(t, [key]) end)
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> fetch!(t, key) end)
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> fetch(t, key) end)
@@ -152,6 +149,11 @@ defmodule RadixTest do
     assert adjacencies(t) == %{<<>> => {<<0::1>>, 0, <<1::1>>, 1}}
   end
 
+  # Radix.dot/2
+  test "dot/2 requires valid input" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> dot(t) end)
+  end
+
   # Radix.new/0
   test "new, empty radix tree" do
     t = new()
@@ -164,15 +166,15 @@ defmodule RadixTest do
     assert t == {0, {7, [{<<0, 0, 0, 0>>, 0}], [{<<1, 1, 1, 1>>, 1}]}, nil}
   end
 
-  # Radix.prune/2
-  test "prune/2 requires valid input" do
+  # Radix.prune/3
+  test "prune/3 requires valid input" do
     goodfun = fn _ -> nil end
     badfun = fn _, _ -> nil end
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> prune(t, goodfun) end)
     assert_raise ArgumentError, fn -> prune(new(), badfun) end
   end
 
-  test "prune/2 prunes once or recursively" do
+  test "prune/3 prunes once or recursively" do
     f = fn
       {_k0, _k1, v1, _k2, v2} -> {:ok, v1 + v2}
       {_k0, v0, _k1, v1, _k2, v2} -> {:ok, v0 + v1 + v2}
@@ -295,6 +297,7 @@ defmodule RadixTest do
 
   # Radix.count/1
   test "count the number of entries in a tree" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> count(t) end)
     t = new()
     assert 0 == count(new())
     t = put(t, <<>>, nil)
@@ -307,6 +310,8 @@ defmodule RadixTest do
 
   # Radix.delete/2
   test "delete/2 uses exact match" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> delete(t, key) end)
+
     t =
       new()
       |> put(<<0>>, "0/8")

@@ -1258,7 +1258,9 @@ defmodule Radix do
   `tree` and `value` is stored under the parent key `k0` overwriting any
   existing value.
 
-  Optionally specify `recurse: true` to 
+  Optionally specify `recurse: true` to keep pruning as long as pruning changes
+  the tree.  
+
   ## Examples
 
       # prune in a singe pass
@@ -1284,39 +1286,52 @@ defmodule Radix do
       {0, [{<<1, 1, 0::size(7)>>, 6}], nil}
 
   """
-  @spec prune(tree, (tuple -> {:ok, any} | nil), Keywords) :: tree
+  @spec prune(tree, (tuple -> nil | {:ok, value}), Keyword.t()) :: tree
   def prune(tree, fun, opts \\ [])
 
   def prune({0, _, _} = tree, fun, opts) when is_function(fun, 1) do
-    maybe_recurse = fn acc, parent ->
-      recurse = Keyword.get(opts, :recurse, false)
+    reducer = pruner(fun)
 
-      # parent is nil => a new parent was created
-      case {parent, recurse} do
-        {nil, true} -> prune(acc, fun, opts)
-        _ -> acc
-      end
+    case Keyword.get(opts, :recurse, false) do
+      false -> reduce(tree, tree, reducer)
+      true -> prunep(tree, reducer)
     end
+  end
 
-    reducer = fn k2, v2, acc ->
+  def prune({0, _, _} = _tree, fun, _opts),
+    do: raise(arg_err(:bad_fun, {fun, 1}))
+
+  def prune(tree, _fun, _opts),
+    do: raise(arg_err(:bad_tree, tree))
+
+  @spec prunep(tree, (key, value, acc -> acc)) :: tree
+  defp prunep(tree, fun) do
+    case reduce(tree, tree, fun) do
+      ^tree -> tree
+      changed -> prunep(changed, fun)
+    end
+  end
+
+  @spec pruner((tuple -> nil | {:ok, any})) :: (key, value, tree -> tree)
+  defp pruner(fun) do
+    fn k2, v2, acc ->
       k0 = trim(k2)
 
       with 1 <- bit(k2, bit_size(k2) - 1),
            {k1, v1} <- get(acc, flip(k2)),
            parent <- get(acc, k0) do
-        v0 =
+        result =
           case parent do
             nil -> fun.({k0, k1, v1, k2, v2})
             {^k0, v0} -> fun.({k0, v0, k1, v1, k2, v2})
           end
 
-        case v0 do
-          {:ok, v0} ->
+        case result do
+          {:ok, value} ->
             acc
             |> delete(k1)
             |> delete(k2)
-            |> put(k0, v0)
-            |> maybe_recurse.(parent)
+            |> put(k0, value)
 
           _ ->
             acc
@@ -1325,15 +1340,7 @@ defmodule Radix do
         _ -> acc
       end
     end
-
-    reduce(tree, tree, reducer)
   end
-
-  def prune({0, _, _} = _tree, fun, _opts),
-    do: raise(arg_err(:bad_fun, {fun, 1}))
-
-  def prune(tree, _fun, _opts),
-    do: raise(arg_err(:bad_tree, tree))
 
   @doc """
   Stores the key,value-pairs from `elements` in the radix `tree`.
