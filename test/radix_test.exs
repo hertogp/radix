@@ -962,8 +962,8 @@ defmodule RadixTest do
     assert Enum.reduce(kvs, 0, fn {_k, v}, acc -> v + acc end) == Enum.sum(1..12)
   end
 
-  # Radix.update/3
-  test "update/3 validates input" do
+  # Radix.update/4
+  test "update/4 validates input" do
     goodfun = fn _ -> nil end
     badfun = fn -> 0 end
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> update(t, <<0>>, 0, goodfun) end)
@@ -973,7 +973,7 @@ defmodule RadixTest do
     assert_raise(RadixError, fn -> update(@broken_left_tree, <<255>>, 0, goodfun) end)
   end
 
-  test "update/3" do
+  test "update/4" do
     increment = fn x -> x + 1 end
 
     t =

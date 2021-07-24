@@ -11,7 +11,7 @@
 
 A bitwise radix tree for prefix based matching on bitstring keys of any length.
 
-Radix provides a [radix tree](https://en.wikipedia.org/wiki/Radix_tree) whose
+`Radix` provides a [radix tree](https://en.wikipedia.org/wiki/Radix_tree) whose
 radius is 2, has path-compression and no one-way branching.  Entries consist of
 {key, value}-pairs whose insertion/deletion is always based on an exact
 key-match. Retrieval can be either exact or is based on a longest prefix match.

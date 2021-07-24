@@ -1623,6 +1623,64 @@ defmodule Radix do
     do: raise(arg_err(:bad_key, key))
 
   @doc """
+  Updates a key,value-pair in `tree` by invoking `fun` for a resulting value.
+
+  After a longest prefix match lookup for given search `key`, the callback `fun`
+  is called with:
+  - `{:matched, matching_key, value}`, in case there was a match
+  - `{:nomatch, original_key}`, in case there was no match
+
+  In both cases, the callback `fun` must return one of:
+  - `{:ok, key, value}`, which stores `value` under `key` in the given `tree`, or
+  - `nil` (or anything else but the `{:ok, k, v}` really), which means `tree` will be returned unchanged.
+
+  ## Examples
+
+      iex> max24bits = fn key when bit_size(key) > 24 ->
+      ...>                  <<bits::bitstring-size(24), _::bitstring>> = key; <<bits::bitstring>>
+      ...>                key -> key
+      ...>             end
+      iex>
+      iex> counter = fn {:matched, k, v} -> {:ok, k, v + 1}
+      ...>              {:nomatch,  k} -> {:ok, max24bits.(k), 1}
+      ...>           end
+      iex> t = new()
+      iex> t = update(t, <<1, 1, 1, 1>>, counter)
+      iex> t
+      {0, [{<<1, 1, 1>>, 1}], nil}
+      iex> t = update(t, <<1, 1, 1, 255>>, counter)
+      iex> t
+      {0, [{<<1, 1, 1>>, 2}], nil}
+      iex> t = update(t, <<1, 1, 1, 255>>, counter)
+      iex> t
+      {0, [{<<1, 1, 1>>, 3}], nil}
+
+  """
+  @spec update(tree, key, ({:nomatch, key} | {:matched, key, value} -> nil | {:ok, key, value})) ::
+          tree
+  def update({0, _, _} = tree, key, fun) when is_bitstring(key) and is_function(fun, 1) do
+    result =
+      case lookup(tree, key) do
+        nil -> fun.({:nomatch, key})
+        {k0, v0} -> fun.({:matched, k0, v0})
+      end
+
+    case result do
+      {:ok, k, v} -> put(tree, k, v)
+      _ -> tree
+    end
+  end
+
+  def update({0, _, _} = _tree, key, fun) when is_bitstring(key),
+    do: raise(arg_err(:bad_fun, {fun, 1}))
+
+  def update({0, _, _} = _tree, key, fun) when is_function(fun, 1),
+    do: raise(arg_err(:bad_key, key))
+
+  def update(tree, _fun),
+    do: raise(arg_err(:bad_tree, tree))
+
+  @doc """
   Returns all values stored in the radix `tree`.
 
   ## Example
