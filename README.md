@@ -17,43 +17,64 @@ radius is 2, has path-compression and no one-way branching.  Entries consist of
 key-match. Retrieval can be either exact or is based on a longest prefix match.
 
 
-## Examples
+## Example
 
     iex> t = new()
-    ...>     |> put(<<1, 1, 1>>, "1.1.1/24")
+    ...>     |> put(<<1, 1, 1>>, "1.1.1.0/24")
     ...>     |> put(<<1, 1, 1, 0::6>>, "1.1.1.0/30")
+    ...>     |> put(<<1, 1, 1, 1::6>>, "1.1.1.4/30")
     ...>     |> put(<<1, 1, 1, 1::1>>, "1.1.1.128/25")
     ...>     |> put(<<255>>, "255/8")
     iex>
-    iex>
     iex> # longest prefix match
-    iex>
     iex> lookup(t, <<1, 1, 1, 255>>)
     {<<1, 1, 1, 1::1>>, "1.1.1.128/25"}
     iex>
-    iex>
     iex> # more specific matches (includes search key if present)
-    iex>
     iex> more(t, <<1, 1, 1>>)
-    [{<<1, 1, 1, 0::size(6)>>, "1.1.1.0/30"}, {<<1, 1, 1>>, "1.1.1/24"}, {<<1, 1, 1, 1::size(1)>>, "1.1.1.128/25"}]
-    iex>
-    iex>
+    [
+      {<<1, 1, 1, 1::size(6)>>, "1.1.1.4/30"},
+      {<<1, 1, 1, 0::size(6)>>, "1.1.1.0/30"},
+      {<<1, 1, 1>>, "1.1.1.0/24"},
+      {<<1, 1, 1, 1::size(1)>>, "1.1.1.128/25"}
+    ]
     iex> # less specific matches (includes search key if present)
-    iex>
     iex> less(t, <<1, 1, 1, 3>>)
-    [{<<1, 1, 1, 0::size(6)>>, "1.1.1.0/30"}, {<<1, 1, 1>>, "1.1.1/24"}]
-    iex>
+    [
+      {<<1, 1, 1, 0::size(6)>>, "1.1.1.0/30"},
+      {<<1, 1, 1>>, "1.1.1.0/24"}
+    ]
     iex> # exact match
     iex> get(t, <<1, 1, 1, 0::6>>)
     {<<1, 1, 1, 0::6>>, "1.1.1.0/30"}
-    iex>
-    iex> get(t, <<1, 1, 1, 0>>)
+    iex> get(t, <<2, 2, 2, 2>>)
     nil
-    iex>
-    iex> dot(t) |> (&File.write("assets/readme.dot", &1)).()
+    iex> pruner = fn
+    ...>   {_k0, _k1, _v1, _k2, _v2} -> {:ok, "new parent"}
+    ...>   {_k0, _v0, _k1, _v1, _k2, _v2} -> {:ok, "updated parent"}
+    ...> end
+    iex> keys(t)
+    [
+      <<1, 1, 1, 0::size(6)>>,
+      <<1, 1, 1>>,
+      <<1, 1, 1, 1::size(6)>>,
+      <<1, 1, 1, 1::size(1)>>,
+      <<255>>
+    ]
+    iex> prune(t, pruner)
+    ...> |> keys()
+    [
+      <<1, 1, 1, 0::size(5)>>,
+      <<1, 1, 1>>,
+      <<1, 1, 1, 1::size(1)>>,
+      <<255>>
+    ]
+    iex> prune(t, pruner)
+    ...> |> dot()
+    ...> |> (&File.write("assets/readme.dot", &1)).()
 
 
-The radix tree above looks something like this:
+The radix tree above, after pruning, looks something like this:
 
 ![Radix](assets/readme.dot.png)
 
@@ -103,7 +124,7 @@ list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:radix, "~> 0.2.0"}
+    {:radix, "~> 0.3.0"}
   ]
 end
 ```

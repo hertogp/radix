@@ -7,6 +7,9 @@ Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- Nothing yet
+
+## [v0.3.0] - 2021-07-24
 
 ### added
 - `Radix.adjacencies/1`, returns a map of parent keys with their (combinable) children
@@ -33,6 +36,7 @@ Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 - `Radix.split/3`, split a radix tree into two trees
 
 ### changed
+
 
 ## [v0.1.1] - 2021-06-21
 
