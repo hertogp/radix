@@ -1248,14 +1248,14 @@ defmodule Radix do
     do: raise(arg_err(:bad_tree, tree))
 
   @doc """
-  Prunes given `tree` by invoking `fun` on adjacent or overlapping keys.
+  Prunes given `tree` by invoking `fun` on adjacent keys.
 
-  The callback `fun` is called with a single 5 or 6-element tuple:
-  - `{k0, k1, v1, k2, v2}`, two adjacent keys `k1` and `k2`, their parent `k0` is absent
-  - `{k0, v0, k1, v1, k2, v2}`, two adjacent keys `k1` and `k2` with parent `k0` and its `v0`
+  The callback `fun` is called with a 5- or 6-element tuple:
+  - `{k0, k1, v1, k2, v2}`, for two adjacent keys `k1` and `k2` and absent parent `k0`
+  - `{k0, v0, k1, v1, k2, v2}`, for two adjacent keys `k1` and `k2` with `v0` as parent `k0`'s value
 
   If `fun` returns `{:ok, value}` the children `k1` and `k2` are deleted from
-  `tree` and `value` is stored under the parent key `k0` overwriting any
+  `tree` and `value` is stored under the parent key `k0`, overwriting any
   existing value.
 
   Optionally specify `recurse: true` to keep pruning as long as pruning changes
@@ -1263,27 +1263,31 @@ defmodule Radix do
 
   ## Examples
 
-      # prune in a singe pass
-      iex> combine = fn {_k0, _k1, v1, _k2, v2} -> {:ok, v1 + v2}
-      ...>              {_k0, v0, _k1, v1, _k2, v2} -> {:ok, v0 + v1 + v2}
-      ...>           end
+      iex> adder = fn {_k0, _k1, v1, _k2, v2} -> {:ok, v1 + v2}
+      ...>            {_k0, v0, _k1, v1, _k2, v2} -> {:ok, v0 + v1 + v2}
+      ...>         end
       iex> t = new()
       ...> |> put(<<1, 1, 1, 0::1>>, 1)
       ...> |> put(<<1, 1, 1, 1::1>>, 2)
       ...> |> put(<<1, 1, 0>>, 3)
-      iex> prune(t, combine)
+      iex>
+      iex> # prune, once
+      iex> prune(t, adder)
       {0, {23, [{<<1, 1, 0>>, 3}], [{<<1, 1, 1>>, 3}]}, nil}
-
-      # recursive prune a tree
-      iex> combine = fn {_k0, _k1, v1, _k2, v2} -> {:ok, v1 + v2}
-      ...>              {_k0, v0, _k1, v1, _k2, v2} -> {:ok, v0 + v1 + v2}
-      ...>           end
-      iex> t = new()
-      ...> |> put(<<1, 1, 1, 0::1>>, 1)
-      ...> |> put(<<1, 1, 1, 1::1>>, 2)
-      ...> |> put(<<1, 1, 0>>, 3)
-      iex> prune(t, combine, recurse: true)
+      iex>
+      iex>  # prune, recursively
+      iex> prune(t, adder, recurse: true)
       {0, [{<<1, 1, 0::size(7)>>, 6}], nil}
+
+      iex> adder = fn {_k0, _k1, v1, _k2, v2} -> {:ok, v1 + v2}
+      ...>            {_k0, v0, _k1, v1, _k2, v2} -> {:ok, v0 + v1 + v2}
+      ...>         end
+      iex> new(for x <- 0..255, do: {<<x>>, x})
+      ...> |> prune(adder, recurse: true)
+      {0, [{<<>>, 32640}], nil}
+      iex>
+      iex> Enum.sum(0..255)
+      32640
 
   """
   @spec prune(tree, (tuple -> nil | {:ok, value}), Keyword.t()) :: tree

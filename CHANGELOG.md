@@ -7,15 +7,13 @@ Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-- Nothing yet
 
 ### added
 - `Radix.adjacencies/1`, returns a map of parent keys with their (combinable) children
 - `Radix.prune/3` prune a tree by combining neighboring keys, recursion is optional
 
 ### changed
-- `Radix.count/1` raises ArgumentError instead of FunctionClauseError when needed
-
+- `Radix.count/1` raises ArgumentError instead of FunctionClauseError on invalid input
 
 
 ## [v0.2.0] - 2021-07-18

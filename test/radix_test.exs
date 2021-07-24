@@ -5,120 +5,20 @@ defmodule RadixTest do
 
   @bad_trees [{}, {nil}, {nil, nil}, {nil, nil, nil}, {-1, nil, nil}, {2, nil, nil}]
   @bad_keys [nil, true, false, 0, '0', [], ["0"], {}, {"0"}, %{}, %{"0" => "0"}]
+  @broken_left_tree {0, [42], nil}
+  @broken_right_tree {0, nil, [42]}
 
   # list of {k,k}-entries, where k is 16 bits
   @slash16kv for x <- 0..255, y <- 0..255, do: {<<x, y>>, <<x, y>>}
 
-  # ArgumentError's
-
-  test "API functions require a valid radix root" do
-    key = <<0>>
-    fun1 = fn _ -> nil end
-    fun2 = fn _, _ -> nil end
-    fun3 = fn _, _, _ -> nil end
-
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> drop(t, [key]) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> fetch!(t, key) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> fetch(t, key) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> get(t, key) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> keys(t) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> less(t, key) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> lookup(t, key) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> merge(t, t) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> merge(t, t, fun3) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> more(t, key) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> pop(t, key) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> put(t, [{key, 0}]) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> put(t, key, 0) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> reduce(t, 0, fun3) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> split(t, [key]) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> take(t, [key]) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> to_list(t) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> update(t, key, 0, fun1) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> values(t) end)
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> walk(t, 0, fun2) end)
-  end
-
-  test "API functions require a valid radix key" do
-    tree = {0, nil, nil}
-    upfun = fn x -> x end
-
-    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> delete(tree, k) end)
-    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> drop(tree, [k]) end)
-    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> fetch!(tree, k) end)
-    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> fetch(tree, k) end)
-    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> get(tree, k) end)
-    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> less(tree, k) end)
-    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> lookup(tree, k) end)
-    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> more(tree, k) end)
-    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> pop(tree, k) end)
-    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> put(tree, [{k, 0}]) end)
-    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> put(tree, k, 0) end)
-    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> split(tree, [k]) end)
-    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> take(tree, [k]) end)
-    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> update(tree, k, 0, upfun) end)
-  end
-
-  test "API functions validate arity of callbacks" do
-    tree = {0, nil, nil}
-    key = <<1>>
-    fun0 = fn -> 0 end
-
-    assert_raise(ArgumentError, fn -> merge(tree, tree, fun0) end)
-    assert_raise(ArgumentError, fn -> reduce(tree, 0, fun0) end)
-    assert_raise(ArgumentError, fn -> update(tree, key, 0, fun0) end)
-    assert_raise(ArgumentError, fn -> walk(tree, 0, fun0) end)
-  end
-
-  # RadixError's
-
-  test "API functions detect some corruption in radix trees" do
-    # since anybody can add their own tree manip functions to the mix
-    broken_tree = {0, [42], nil}
-    key = <<1>>
-    # note that root's left subtree is corrupt, key <<1>> will go left
-    # so the API functions should detect the corruption for this combination
-    fun1 = fn x -> x end
-    fun2 = fn acc, _node -> acc end
-    fun3 = fn acc, _k, _v -> acc end
-
-    assert_raise(RadixError, fn -> count(broken_tree) end)
-    assert_raise(RadixError, fn -> delete(broken_tree, key) end)
-    assert_raise(RadixError, fn -> dot(broken_tree) end)
-    assert_raise(RadixError, fn -> drop(broken_tree, [key]) end)
-    assert_raise(RadixError, fn -> fetch!(broken_tree, key) end)
-    assert_raise(RadixError, fn -> fetch(broken_tree, key) end)
-    assert_raise(RadixError, fn -> get(broken_tree, key) end)
-    assert_raise(RadixError, fn -> keys(broken_tree) end)
-    assert_raise(RadixError, fn -> less(broken_tree, key) end)
-    assert_raise(RadixError, fn -> lookup(broken_tree, key) end)
-    assert_raise(RadixError, fn -> more(broken_tree, key) end)
-    assert_raise(RadixError, fn -> put(broken_tree, [{key, 0}]) end)
-    assert_raise(RadixError, fn -> put(broken_tree, key, 0) end)
-    assert_raise(RadixError, fn -> reduce(broken_tree, 0, fun3) end)
-    assert_raise(RadixError, fn -> split(broken_tree, [key]) end)
-    assert_raise(RadixError, fn -> take(broken_tree, [key]) end)
-    assert_raise(RadixError, fn -> to_list(broken_tree) end)
-    assert_raise(RadixError, fn -> update(broken_tree, key, 0, fun1) end)
-    assert_raise(RadixError, fn -> values(broken_tree) end)
-    assert_raise(RadixError, fn -> walk(broken_tree, 0, fun2) end)
-
-    # using a key whose 1st bit is `1`, leads some functions to a valid leaf
-
-    key = <<225>>
-    fetch(broken_tree, key)
-    get(broken_tree, key)
-    put(broken_tree, key, 0)
-    put(broken_tree, [{key, 0}])
-    delete(broken_tree, key)
-    drop(broken_tree, [key])
-    more(broken_tree, key)
-  end
-
   # Radix.adjacencies/1
-  test "adjacencies/1 returns a map of parents with 2 kids" do
+  test "adjacencies/1 validates input" do
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> adjacencies(t) end)
+    assert_raise RadixError, fn -> adjacencies(@broken_left_tree) end
+    assert_raise RadixError, fn -> adjacencies(@broken_right_tree) end
+  end
 
+  test "adjacencies/1 returns a map of parents with 2 kids" do
     # empty tree yields an empty map
     m = adjacencies(new())
     assert map_size(m) == 0
@@ -149,107 +49,209 @@ defmodule RadixTest do
     assert adjacencies(t) == %{<<>> => {<<0::1>>, 0, <<1::1>>, 1}}
   end
 
-  # Radix.dot/2
-  test "dot/2 requires valid input" do
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> dot(t) end)
+  # Radix.count/1
+  test "count/1 validates input" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> count(t) end)
+    assert_raise(RadixError, fn -> count(@broken_left_tree) end)
+    assert_raise(RadixError, fn -> count(@broken_right_tree) end)
   end
 
-  # Radix.new/0
-  test "new, empty radix tree" do
+  test "count the number of entries in a tree" do
     t = new()
+    assert 0 == count(new())
+    t = put(t, <<>>, nil)
+    assert 1 == count(t)
+
+    elms = for x <- 0..255, do: {<<x, 255 - x>>, x}
+    t = new(elms)
+    assert 256 == count(t)
+  end
+
+  # Radix.delete/2
+  test "delete/2 validates input" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> delete(t, <<>>) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> delete(new(), k) end)
+    assert_raise(RadixError, fn -> delete(@broken_left_tree, <<0>>) end)
+    assert_raise(RadixError, fn -> delete(@broken_right_tree, <<255>>) end)
+  end
+
+  test "delete/2 uses exact match" do
+    t =
+      new()
+      |> put(<<0>>, "0/8")
+      |> put(<<0, 0>>, "0.0/16")
+      |> put(<<0, 0, 0>>, "0.0.0/24")
+      |> put(<<>>, "empty")
+
+    t = delete(t, <<0, 0>>)
+    assert get(t, <<0>>) == {<<0>>, "0/8"}
+    assert get(t, <<0, 0>>) == nil
+    assert get(t, <<0, 0, 0>>) == {<<0, 0, 0>>, "0.0.0/24"}
+    assert get(t, <<>>) == {<<>>, "empty"}
+
+    t = delete(t, <<0>>)
+    assert get(t, <<0>>) == nil
+    assert get(t, <<0, 0>>) == nil
+    assert get(t, <<0, 0, 0>>) == {<<0, 0, 0>>, "0.0.0/24"}
+    assert get(t, <<>>) == {<<>>, "empty"}
+
+    t = delete(t, <<>>)
+    assert get(t, <<0>>) == nil
+    assert get(t, <<0, 0>>) == nil
+    assert get(t, <<0, 0, 0>>) == {<<0, 0, 0>>, "0.0.0/24"}
+    assert get(t, <<>>) == nil
+
+    t = delete(t, <<0, 0, 0>>)
     assert t == {0, nil, nil}
   end
 
-  # Radix.new/1
-  test "new, radix tree initialized with list of {k,v}-pairs" do
-    t = new([{<<1, 1, 1, 1>>, 1}, {<<0, 0, 0, 0>>, 0}])
-    assert t == {0, {7, [{<<0, 0, 0, 0>>, 0}], [{<<1, 1, 1, 1>>, 1}]}, nil}
+  # Radix.dot/2
+  test "dot/2 validates input" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> dot(t) end)
+    assert_raise(RadixError, fn -> dot(@broken_left_tree) end)
+    assert_raise(RadixError, fn -> dot(@broken_right_tree) end)
   end
 
-  # Radix.prune/3
-  test "prune/3 requires valid input" do
-    goodfun = fn _ -> nil end
-    badfun = fn _, _ -> nil end
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> prune(t, goodfun) end)
-    assert_raise ArgumentError, fn -> prune(new(), badfun) end
+  # Radix.drop/2
+  test "drop2 validates input" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> drop(t, [<<0>>]) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> drop(new(), [k]) end)
+    assert_raise(RadixError, fn -> drop(@broken_left_tree, [<<0>>]) end)
+    assert_raise(RadixError, fn -> drop(@broken_right_tree, [<<255>>]) end)
   end
 
-  test "prune/3 prunes once or recursively" do
-    f = fn
-      {_k0, _k1, v1, _k2, v2} -> {:ok, v1 + v2}
-      {_k0, v0, _k1, v1, _k2, v2} -> {:ok, v0 + v1 + v2}
-    end
-
-    t = new(for x <- 0..255, do: {<<x>>, x})
-    t0 = prune(t, f)
-    t1 = prune(t, f, recurse: true)
-
-    assert count(t) == 256
-    assert count(t0) == 128
-    assert count(t1) == 1
-    assert t1 == {0, [{"", 32640}], nil}
-    assert Enum.sum(0..255) == get(t1, <<>>) |> elem(1)
-  end
-
-  # Radix.put/2
-  test "put/2 a list of {k,v}-pairs" do
-    # both in left subtree
-    t = new() |> put([{<<0, 0, 0, 0>>, "0"}, {<<1, 1, 1, 1>>, "1"}])
-    assert t == {0, {7, [{<<0, 0, 0, 0>>, "0"}], [{<<1, 1, 1, 1>>, "1"}]}, nil}
-
-    # one in left and one in right subtree
-    t = new() |> put([{<<0, 0, 0, 0>>, "0"}, {<<128, 1, 1, 1>>, "128"}])
-    assert t == {0, [{<<0, 0, 0, 0>>, "0"}], [{<<128, 1, 1, 1>>, "128"}]}
-
-    # both in right subtree
-    t = new() |> put([{<<128, 0, 0, 0>>, "A"}, {<<128, 0, 0, 1>>, "B"}])
-    assert t == {0, nil, {31, [{<<128, 0, 0, 0>>, "A"}], [{<<128, 0, 0, 1>>, "B"}]}}
-  end
-
-  # Radix.put/3
-  test "put/3 a new, single element" do
-    # insert a single value into left subtree of root
+  test "drop/2 ignores non-existing keys" do
     t =
       new()
-      |> put(<<0, 1, 2, 3>>, "0123")
+      |> put(<<0>>, "0/8")
+      |> put(<<0, 0>>, "0.0/16")
+      |> put(<<0, 0, 0>>, "0.0.0/24")
+      |> put(<<>>, "empty")
 
-    assert t == {0, [{<<0, 1, 2, 3>>, "0123"}], nil}
+    t = drop(t, [<<0>>, <<1>>, <<0, 0>>, <<>>])
+    assert get(t, <<0>>) == nil
+    assert get(t, <<0, 0>>) == nil
+    assert get(t, <<>>) == nil
+    assert get(t, <<0, 0, 0>>) == {<<0, 0, 0>>, "0.0.0/24"}
 
-    # insert a single value into right subtree of root
-    t =
-      new()
-      |> put(<<128, 1, 2, 3>>, 42)
-
-    assert t == {0, nil, [{<<128, 1, 2, 3>>, 42}]}
+    t = drop(t, [<<1, 1, 1>>, <<0, 0, 0>>])
+    assert t == {0, nil, nil}
   end
 
-  test "put replaces any existing {k,v}-pair" do
+  test "drop/2 dropping all keys yields empty tree" do
+    t = new(@slash16kv)
+    assert drop(t, keys(t)) == {0, nil, nil}
+  end
+
+  # Radix.empty?/1
+  test "empty?/1 says true or false" do
+    assert false == empty?(@broken_left_tree)
+    assert false == empty?(@broken_right_tree)
+
+    assert true == empty?(new())
+
+    t = new() |> put(<<>>, nil)
+    assert false == empty?(t)
+  end
+
+  # Radix.fetch/3
+  test "fetch/3 validates input" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> fetch(t, <<>>) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> fetch(new(), k) end)
+    assert_raise(RadixError, fn -> fetch(@broken_left_tree, <<0>>) end)
+    assert_raise(RadixError, fn -> fetch(@broken_right_tree, <<255>>) end)
+  end
+
+  test "fetch/3 fetches from the tree" do
     t =
       new()
-      |> put(<<128, 1, 2, 3>>, 42)
-      |> put(<<128, 1, 2, 3>>, "42")
+      |> put(<<255>>, 1)
+      |> put(<<255, 255>>, 2)
+      |> put(<<255, 255, 1::1>>, 3)
+      |> put(<<255, 255, 3::2>>, 4)
+      |> put(<<128>>, 5)
+      |> put(<<128, 128>>, 6)
+      |> put(<<128, 128, 1::1>>, 7)
+      |> put(<<128, 128, 3::2>>, 8)
+      |> put(<<>>, nil)
+      |> put(<<0>>, 9)
+      |> put(<<0, 0>>, 10)
+      |> put(<<0, 0, 0::1>>, 11)
+      |> put(<<0, 0, 0::2>>, 12)
 
-    assert t == {0, nil, [{<<128, 1, 2, 3>>, "42"}]}
+    assert fetch(t, <<255, 255, 1::1>>) == {:ok, {<<255, 255, 1::1>>, 3}}
+    assert fetch(t, <<255, 255, 3::2>>) == {:ok, {<<255, 255, 3::2>>, 4}}
 
+    assert fetch(t, <<128, 128, 1::1>>) == {:ok, {<<128, 128, 1::1>>, 7}}
+    assert fetch(t, <<128, 128, 3::2>>) == {:ok, {<<128, 128, 3::2>>, 8}}
+
+    assert fetch(t, <<0, 0, 0::1>>) == {:ok, {<<0, 0, 0::1>>, 11}}
+    assert fetch(t, <<0, 0, 0::2>>) == {:ok, {<<0, 0, 0::2>>, 12}}
+
+    # longest prefix match
+    assert fetch(t, <<255, 128>>, match: :lpm) == {:ok, {<<255>>, 1}}
+    assert fetch(t, <<255, 255, 128>>, match: :lpm) == {:ok, {<<255, 255, 1::1>>, 3}}
+    assert fetch(t, <<128, 128, 255, 255>>, match: :lpm) == {:ok, {<<128, 128, 3::2>>, 8}}
+    assert fetch(t, <<0, 0, 0, 0>>, match: :lpm) == {:ok, {<<0, 0, 0::2>>, 12}}
+
+    # no match unless lpm
+    assert fetch(t, <<7>>) == :error
+    assert fetch(t, <<7>>, match: :lpm) == {:ok, {<<>>, nil}}
+  end
+
+  # Radix.fetch!/3
+  test "fetch!/3 validates input" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> fetch!(t, <<>>) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> fetch!(new(), k) end)
+    assert_raise(RadixError, fn -> fetch!(@broken_left_tree, <<0>>) end)
+    assert_raise(RadixError, fn -> fetch!(@broken_right_tree, <<255>>) end)
+  end
+
+  test "fetch!/3 fetch!es from the tree" do
     t =
       new()
-      |> put(<<1>>, 1)
-      |> put(<<1>>, "one")
-      |> put(<<128>>, 128)
-      |> put(<<>>, 0)
+      |> put(<<255>>, 1)
+      |> put(<<255, 255>>, 2)
+      |> put(<<255, 255, 1::1>>, 3)
+      |> put(<<255, 255, 3::2>>, 4)
+      |> put(<<128>>, 5)
+      |> put(<<128, 128>>, 6)
+      |> put(<<128, 128, 1::1>>, 7)
+      |> put(<<128, 128, 3::2>>, 8)
+      |> put(<<>>, nil)
+      |> put(<<0>>, 9)
+      |> put(<<0, 0>>, 10)
+      |> put(<<0, 0, 0::1>>, 11)
+      |> put(<<0, 0, 0::2>>, 12)
 
-    assert get(t, <<>>) == {<<>>, 0}
-    assert get(t, <<1>>) == {<<1>>, "one"}
-    assert get(t, <<128>>) == {<<128>>, 128}
+    assert fetch!(t, <<255, 255, 1::1>>) == {<<255, 255, 1::1>>, 3}
+    assert fetch!(t, <<255, 255, 3::2>>) == {<<255, 255, 3::2>>, 4}
 
-    # empty key also gets replaced
-    t = put(t, <<>>, "null")
-    assert get(t, <<>>) == {<<>>, "null"}
-    assert get(t, <<1>>) == {<<1>>, "one"}
-    assert get(t, <<128>>) == {<<128>>, 128}
+    assert fetch!(t, <<128, 128, 1::1>>) == {<<128, 128, 1::1>>, 7}
+    assert fetch!(t, <<128, 128, 3::2>>) == {<<128, 128, 3::2>>, 8}
+
+    assert fetch!(t, <<0, 0, 0::1>>) == {<<0, 0, 0::1>>, 11}
+    assert fetch!(t, <<0, 0, 0::2>>) == {<<0, 0, 0::2>>, 12}
+
+    # longest prefix match
+    assert fetch!(t, <<255, 128>>, match: :lpm) == {<<255>>, 1}
+    assert fetch!(t, <<255, 255, 128>>, match: :lpm) == {<<255, 255, 1::1>>, 3}
+    assert fetch!(t, <<128, 128, 255, 255>>, match: :lpm) == {<<128, 128, 3::2>>, 8}
+    assert fetch!(t, <<0, 0, 0, 0>>, match: :lpm) == {<<0, 0, 0::2>>, 12}
+
+    # no match unless lpm
+    assert_raise KeyError, fn -> fetch!(t, <<7>>) end
+    assert fetch!(t, <<7>>, match: :lpm) == {<<>>, nil}
   end
 
   # Radix.get/2
+  test "get/2 validates input" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> get(t, <<>>) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> get(new(), k) end)
+    assert_raise(RadixError, fn -> get(@broken_left_tree, <<0>>) end)
+    assert_raise(RadixError, fn -> get(@broken_right_tree, <<255>>) end)
+  end
+
   test "get/2 from empty tree yields nil" do
     t = new()
     assert get(t, <<>>) == nil
@@ -295,78 +297,14 @@ defmodule RadixTest do
     assert get(t, <<1, 1>>) == nil
   end
 
-  # Radix.count/1
-  test "count the number of entries in a tree" do
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> count(t) end)
-    t = new()
-    assert 0 == count(new())
-    t = put(t, <<>>, nil)
-    assert 1 == count(t)
-
-    elms = for x <- 0..255, do: {<<x, 255 - x>>, x}
-    t = new(elms)
-    assert 256 == count(t)
+  # Radix.keys/1
+  test "keys/1 validates input" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> keys(t) end)
+    assert_raise(RadixError, fn -> keys(@broken_left_tree) end)
+    assert_raise(RadixError, fn -> keys(@broken_right_tree) end)
   end
 
-  # Radix.delete/2
-  test "delete/2 uses exact match" do
-    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> delete(t, <<>>) end)
-
-    t =
-      new()
-      |> put(<<0>>, "0/8")
-      |> put(<<0, 0>>, "0.0/16")
-      |> put(<<0, 0, 0>>, "0.0.0/24")
-      |> put(<<>>, "empty")
-
-    t = delete(t, <<0, 0>>)
-    assert get(t, <<0>>) == {<<0>>, "0/8"}
-    assert get(t, <<0, 0>>) == nil
-    assert get(t, <<0, 0, 0>>) == {<<0, 0, 0>>, "0.0.0/24"}
-    assert get(t, <<>>) == {<<>>, "empty"}
-
-    t = delete(t, <<0>>)
-    assert get(t, <<0>>) == nil
-    assert get(t, <<0, 0>>) == nil
-    assert get(t, <<0, 0, 0>>) == {<<0, 0, 0>>, "0.0.0/24"}
-    assert get(t, <<>>) == {<<>>, "empty"}
-
-    t = delete(t, <<>>)
-    assert get(t, <<0>>) == nil
-    assert get(t, <<0, 0>>) == nil
-    assert get(t, <<0, 0, 0>>) == {<<0, 0, 0>>, "0.0.0/24"}
-    assert get(t, <<>>) == nil
-
-    t = delete(t, <<0, 0, 0>>)
-    assert t == {0, nil, nil}
-  end
-
-  # Radix.drop/2
-  test "drop/2 ignores non-existing keys" do
-    t =
-      new()
-      |> put(<<0>>, "0/8")
-      |> put(<<0, 0>>, "0.0/16")
-      |> put(<<0, 0, 0>>, "0.0.0/24")
-      |> put(<<>>, "empty")
-
-    t = drop(t, [<<0>>, <<1>>, <<0, 0>>, <<>>])
-    assert get(t, <<0>>) == nil
-    assert get(t, <<0, 0>>) == nil
-    assert get(t, <<>>) == nil
-    assert get(t, <<0, 0, 0>>) == {<<0, 0, 0>>, "0.0.0/24"}
-
-    t = drop(t, [<<1, 1, 1>>, <<0, 0, 0>>])
-    assert t == {0, nil, nil}
-  end
-
-  test "drop/2 dropping all keys yields empty tree" do
-    t = new(@slash16kv)
-    assert drop(t, keys(t)) == {0, nil, nil}
-  end
-
-  # Radix.fetch/3
-  test "fetch/3 fetches from the tree" do
+  test "keys/1 lists all keys" do
     t =
       new()
       |> put(<<255>>, 1)
@@ -377,79 +315,84 @@ defmodule RadixTest do
       |> put(<<128, 128>>, 6)
       |> put(<<128, 128, 1::1>>, 7)
       |> put(<<128, 128, 3::2>>, 8)
-      |> put(<<>>, nil)
       |> put(<<0>>, 9)
       |> put(<<0, 0>>, 10)
       |> put(<<0, 0, 0::1>>, 11)
       |> put(<<0, 0, 0::2>>, 12)
 
-    assert fetch(t, <<255, 255, 1::1>>) == {:ok, {<<255, 255, 1::1>>, 3}}
-    assert fetch(t, <<255, 255, 3::2>>) == {:ok, {<<255, 255, 3::2>>, 4}}
-
-    assert fetch(t, <<128, 128, 1::1>>) == {:ok, {<<128, 128, 1::1>>, 7}}
-    assert fetch(t, <<128, 128, 3::2>>) == {:ok, {<<128, 128, 3::2>>, 8}}
-
-    assert fetch(t, <<0, 0, 0::1>>) == {:ok, {<<0, 0, 0::1>>, 11}}
-    assert fetch(t, <<0, 0, 0::2>>) == {:ok, {<<0, 0, 0::2>>, 12}}
-
-    # longest prefix match
-    assert fetch(t, <<255, 128>>, match: :lpm) == {:ok, {<<255>>, 1}}
-    assert fetch(t, <<255, 255, 128>>, match: :lpm) == {:ok, {<<255, 255, 1::1>>, 3}}
-    assert fetch(t, <<128, 128, 255, 255>>, match: :lpm) == {:ok, {<<128, 128, 3::2>>, 8}}
-    assert fetch(t, <<0, 0, 0, 0>>, match: :lpm) == {:ok, {<<0, 0, 0::2>>, 12}}
-
-    # no match unless lpm
-    assert fetch(t, <<7>>) == :error
-    assert fetch(t, <<7>>, match: :lpm) == {:ok, {<<>>, nil}}
+    keys = keys(t)
+    assert Enum.count(keys) == 12
+    assert <<255>> in keys
+    assert <<255, 255>> in keys
+    assert <<255, 255, 1::1>> in keys
+    assert <<255, 255, 3::2>> in keys
+    assert <<128>> in keys
+    assert <<128, 128>> in keys
+    assert <<128, 128, 1::1>> in keys
+    assert <<128, 128, 3::2>> in keys
+    assert <<0>> in keys
+    assert <<0, 0>> in keys
+    assert <<0, 0, 0::1>> in keys
+    assert <<0, 0, 0::2>> in keys
   end
 
-  # Radix.fetch!/3
-  test "fetch!/3 fetch!es from the tree" do
+  # Radix.less/2
+  test "less/2 validates input" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> less(t, <<>>) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> less(new(), k) end)
+    assert_raise(RadixError, fn -> less(@broken_left_tree, <<0>>) end)
+    assert_raise(RadixError, fn -> less(@broken_right_tree, <<255>>) end)
+  end
+
+  test "less/2 - less specifics" do
     t =
       new()
-      |> put(<<255>>, 1)
-      |> put(<<255, 255>>, 2)
-      |> put(<<255, 255, 1::1>>, 3)
-      |> put(<<255, 255, 3::2>>, 4)
-      |> put(<<128>>, 5)
-      |> put(<<128, 128>>, 6)
-      |> put(<<128, 128, 1::1>>, 7)
-      |> put(<<128, 128, 3::2>>, 8)
-      |> put(<<>>, nil)
-      |> put(<<0>>, 9)
-      |> put(<<0, 0>>, 10)
-      |> put(<<0, 0, 0::1>>, 11)
-      |> put(<<0, 0, 0::2>>, 12)
+      |> put(<<255>>, 8)
+      |> put(<<255, 255>>, 16)
+      |> put(<<255, 255, 1::1>>, 17)
+      |> put(<<255, 255, 3::2>>, 18)
 
-    assert fetch!(t, <<255, 255, 1::1>>) == {<<255, 255, 1::1>>, 3}
-    assert fetch!(t, <<255, 255, 3::2>>) == {<<255, 255, 3::2>>, 4}
+    less = less(t, <<255, 255, 255, 255>>)
+    assert Enum.count(less) == 4
+    assert {<<255>>, 8} in less
+    assert {<<255, 255>>, 16} in less
+    assert {<<255, 255, 1::1>>, 17} in less
+    assert {<<255, 255, 3::2>>, 18} in less
 
-    assert fetch!(t, <<128, 128, 1::1>>) == {<<128, 128, 1::1>>, 7}
-    assert fetch!(t, <<128, 128, 3::2>>) == {<<128, 128, 3::2>>, 8}
+    less = less(t, <<255, 255, 3::2>>)
+    assert Enum.count(less) == 4
+    assert {<<255>>, 8} in less
+    assert {<<255, 255>>, 16} in less
+    assert {<<255, 255, 1::1>>, 17} in less
+    assert {<<255, 255, 3::2>>, 18} in less
 
-    assert fetch!(t, <<0, 0, 0::1>>) == {<<0, 0, 0::1>>, 11}
-    assert fetch!(t, <<0, 0, 0::2>>) == {<<0, 0, 0::2>>, 12}
+    less = less(t, <<255, 255, 1::1>>)
+    assert Enum.count(less) == 3
+    assert {<<255>>, 8} in less
+    assert {<<255, 255>>, 16} in less
+    assert {<<255, 255, 1::1>>, 17} in less
 
-    # longest prefix match
-    assert fetch!(t, <<255, 128>>, match: :lpm) == {<<255>>, 1}
-    assert fetch!(t, <<255, 255, 128>>, match: :lpm) == {<<255, 255, 1::1>>, 3}
-    assert fetch!(t, <<128, 128, 255, 255>>, match: :lpm) == {<<128, 128, 3::2>>, 8}
-    assert fetch!(t, <<0, 0, 0, 0>>, match: :lpm) == {<<0, 0, 0::2>>, 12}
+    less = less(t, <<255, 255>>)
+    assert Enum.count(less) == 2
+    assert {<<255>>, 8} in less
+    assert {<<255, 255>>, 16} in less
 
-    # no match unless lpm
-    assert_raise KeyError, fn -> fetch!(t, <<7>>) end
-    assert fetch!(t, <<7>>, match: :lpm) == {<<>>, nil}
-  end
+    less = less(t, <<255>>)
+    assert Enum.count(less) == 1
+    assert {<<255>>, 8} in less
 
-  # Radix.empty?/1
-  test "empty?/1 stays true to the case" do
-    assert true == empty?(new())
-
-    t = new() |> put(<<>>, nil)
-    assert false == empty?(t)
+    # keys without less specifics
+    assert less(t, <<>>) == []
   end
 
   # Radix.lookup/2
+  test "lookup/2 validates input" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> lookup(t, <<>>) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> lookup(new(), k) end)
+    assert_raise(RadixError, fn -> lookup(@broken_left_tree, <<0>>) end)
+    assert_raise(RadixError, fn -> lookup(@broken_right_tree, <<255>>) end)
+  end
+
   test "lookup/2 uses longest prefix match - 1" do
     t =
       new()
@@ -554,6 +497,17 @@ defmodule RadixTest do
   end
 
   # Radix.merge/2
+  test "merge/2 validates input" do
+    # ensure merging travels left/right subtree of receiving tree
+    t2 = new([{<<0>>, 0}, {<<255>>, 1}])
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> merge(t, new()) end)
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> merge(new(), t) end)
+    assert_raise(RadixError, fn -> merge(new(), @broken_left_tree) end)
+    assert_raise(RadixError, fn -> merge(new(), @broken_right_tree) end)
+    assert_raise(RadixError, fn -> merge(@broken_right_tree, t2) end)
+    assert_raise(RadixError, fn -> merge(@broken_left_tree, t2) end)
+  end
+
   test "merge/2 merges the second tree into the first tree" do
     t1 = new([{<<>>, nil}, {<<0>>, 0}, {<<1>>, 1}, {<<255>>, 255}, {<<255, 1::1>>, 256}])
 
@@ -578,6 +532,20 @@ defmodule RadixTest do
   end
 
   # Radix.merge/3
+  test "merge/3 validates input" do
+    # ensure merging travels left/right subtree of receiving tree
+    t2 = new([{<<0>>, 0}, {<<255>>, 1}])
+    goodfun = fn _, _, _ -> nil end
+    badfun = fn _, _ -> nil end
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> merge(t, new(), goodfun) end)
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> merge(new(), t, goodfun) end)
+    assert_raise ArgumentError, fn -> merge(new(), new(), badfun) end
+    assert_raise(RadixError, fn -> merge(new(), @broken_left_tree, goodfun) end)
+    assert_raise(RadixError, fn -> merge(new(), @broken_right_tree, goodfun) end)
+    assert_raise(RadixError, fn -> merge(@broken_right_tree, t2, goodfun) end)
+    assert_raise(RadixError, fn -> merge(@broken_left_tree, t2, goodfun) end)
+  end
+
   test "merge/3 merges two trees with conflict resolution function" do
     keepv1 = fn _k, v1, _v2 -> v1 end
     t1 = new([{<<>>, nil}, {<<0>>, 0}, {<<1>>, 1}, {<<255>>, 255}, {<<255, 1::1>>, 256}])
@@ -592,42 +560,14 @@ defmodule RadixTest do
     assert count(t3) == 6
   end
 
-  # Radix.update/3
-  test "update/3" do
-    increment = fn x -> x + 1 end
-
-    t =
-      new()
-      |> put(<<128, 128, 128>>, 0)
-      |> put(<<128, 128, 128, 1::1>>, 0)
-      |> put(<<128, 128, 128, 2::2>>, 0)
-
-    assert lookup(t, <<128, 128, 128>>) == {<<128, 128, 128>>, 0}
-    assert lookup(t, <<128, 128, 128, 1::1>>) == {<<128, 128, 128, 1::1>>, 0}
-    assert lookup(t, <<128, 128, 128, 2::2>>) == {<<128, 128, 128, 2::2>>, 0}
-    assert lookup(t, <<>>) == nil
-
-    # <<0>> not in tree yet, gets default value of 1
-    t = update(t, <<0>>, 1, increment)
-    assert get(t, <<0>>) == {<<0>>, 1}
-
-    # <<>> not in tree yet, gets default value of 1
-    t = update(t, <<>>, 1, increment)
-    assert get(t, <<>>) == {<<>>, 1}
-    assert lookup(t, <<255>>) == {<<>>, 1}
-
-    # these all exist and get incremented to 1
-    t = update(t, <<128, 128, 128>>, -1, increment)
-    assert get(t, <<128, 128, 128>>) == {<<128, 128, 128>>, 1}
-
-    t = update(t, <<128, 128, 128, 1::1>>, -1, increment)
-    assert get(t, <<128, 128, 128, 1::1>>) == {<<128, 128, 128, 1::1>>, 1}
-
-    t = update(t, <<128, 128, 128, 2::2>>, -1, increment)
-    assert get(t, <<128, 128, 128, 2::2>>) == {<<128, 128, 128, 2::2>>, 1}
+  # Radix.more/2
+  test "more/2 validates input" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> more(t, <<>>) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> more(new(), k) end)
+    assert_raise(RadixError, fn -> more(@broken_left_tree, <<0>>) end)
+    assert_raise(RadixError, fn -> more(@broken_right_tree, <<255>>) end)
   end
 
-  # Radix.more/2
   test "more/2 - more specifics" do
     t =
       new()
@@ -683,7 +623,32 @@ defmodule RadixTest do
     assert more(t, <<255, 255, 0::1>>) == []
   end
 
+  # Radix.new/0
+  test "new, empty radix tree" do
+    t = new()
+    assert t == {0, nil, nil}
+  end
+
+  # Radix.new/1
+  test "new/1 validates input" do
+    # second key is bad
+    assert_raise ArgumentError, fn -> new([{<<0>>, 0}, {42, 42}]) end
+  end
+
+  test "new, radix tree initialized with list of {k,v}-pairs" do
+    t = new([{<<1, 1, 1, 1>>, 1}, {<<0, 0, 0, 0>>, 0}])
+    assert t == {0, {7, [{<<0, 0, 0, 0>>, 0}], [{<<1, 1, 1, 1>>, 1}]}, nil}
+  end
+
   # Radix.pop/3
+  test "pop/3 validates input" do
+    # 3rd argument opts
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> pop(t, <<>>) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> pop(new(), k) end)
+    assert_raise(RadixError, fn -> pop(@broken_left_tree, <<0>>) end)
+    assert_raise(RadixError, fn -> pop(@broken_right_tree, <<255>>) end)
+  end
+
   test "pop/3 returns value and new tree" do
     t =
       new()
@@ -727,49 +692,115 @@ defmodule RadixTest do
     {{<<1>>, :notfound}, ^t} = pop(t, key, match: :lpm, default: :notfound)
   end
 
-  # Radix.less/2
-  test "less/2 - less specifics" do
+  # Radix.prune/3
+  test "prune/3 validates input" do
+    goodfun = fn _ -> nil end
+    badfun = fn _, _ -> nil end
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> prune(t, goodfun) end)
+    assert_raise ArgumentError, fn -> prune(new(), badfun) end
+    assert_raise(RadixError, fn -> prune(@broken_left_tree, goodfun) end)
+    assert_raise(RadixError, fn -> prune(@broken_right_tree, goodfun) end)
+  end
+
+  test "prune/3 prunes once or recursively" do
+    f = fn
+      {_k0, _k1, v1, _k2, v2} -> {:ok, v1 + v2}
+      {_k0, v0, _k1, v1, _k2, v2} -> {:ok, v0 + v1 + v2}
+    end
+
+    t = new(for x <- 0..255, do: {<<x>>, x})
+    t0 = prune(t, f)
+    t1 = prune(t, f, recurse: true)
+
+    assert count(t) == 256
+    assert count(t0) == 128
+    assert count(t1) == 1
+    assert t1 == {0, [{"", 32640}], nil}
+    assert Enum.sum(0..255) == get(t1, <<>>) |> elem(1)
+  end
+
+  # Radix.put/2
+  test "put/2 validates input" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> put(t, [{<<>>, 0}]) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> put(new(), [{<<>>, 0}, {k, 0}]) end)
+    assert_raise(RadixError, fn -> put(@broken_left_tree, [{<<0>>, 0}]) end)
+    assert_raise(RadixError, fn -> put(@broken_right_tree, [{<<255>>, 0}]) end)
+  end
+
+  test "put/2 a list of {k,v}-pairs" do
+    # both in left subtree
+    t = new() |> put([{<<0, 0, 0, 0>>, "0"}, {<<1, 1, 1, 1>>, "1"}])
+    assert t == {0, {7, [{<<0, 0, 0, 0>>, "0"}], [{<<1, 1, 1, 1>>, "1"}]}, nil}
+
+    # one in left and one in right subtree
+    t = new() |> put([{<<0, 0, 0, 0>>, "0"}, {<<128, 1, 1, 1>>, "128"}])
+    assert t == {0, [{<<0, 0, 0, 0>>, "0"}], [{<<128, 1, 1, 1>>, "128"}]}
+
+    # both in right subtree
+    t = new() |> put([{<<128, 0, 0, 0>>, "A"}, {<<128, 0, 0, 1>>, "B"}])
+    assert t == {0, nil, {31, [{<<128, 0, 0, 0>>, "A"}], [{<<128, 0, 0, 1>>, "B"}]}}
+  end
+
+  # Radix.put/3
+  test "put/3 validates input" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> put(t, <<>>, 0) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> put(new(), k, 0) end)
+    assert_raise(RadixError, fn -> put(@broken_left_tree, <<0>>, 0) end)
+    assert_raise(RadixError, fn -> put(@broken_right_tree, <<255>>, 0) end)
+  end
+
+  test "put/3 a new, single element" do
+    # insert a single value into left subtree of root
     t =
       new()
-      |> put(<<255>>, 8)
-      |> put(<<255, 255>>, 16)
-      |> put(<<255, 255, 1::1>>, 17)
-      |> put(<<255, 255, 3::2>>, 18)
+      |> put(<<0, 1, 2, 3>>, "0123")
 
-    less = less(t, <<255, 255, 255, 255>>)
-    assert Enum.count(less) == 4
-    assert {<<255>>, 8} in less
-    assert {<<255, 255>>, 16} in less
-    assert {<<255, 255, 1::1>>, 17} in less
-    assert {<<255, 255, 3::2>>, 18} in less
+    assert t == {0, [{<<0, 1, 2, 3>>, "0123"}], nil}
 
-    less = less(t, <<255, 255, 3::2>>)
-    assert Enum.count(less) == 4
-    assert {<<255>>, 8} in less
-    assert {<<255, 255>>, 16} in less
-    assert {<<255, 255, 1::1>>, 17} in less
-    assert {<<255, 255, 3::2>>, 18} in less
+    # insert a single value into right subtree of root
+    t =
+      new()
+      |> put(<<128, 1, 2, 3>>, 42)
 
-    less = less(t, <<255, 255, 1::1>>)
-    assert Enum.count(less) == 3
-    assert {<<255>>, 8} in less
-    assert {<<255, 255>>, 16} in less
-    assert {<<255, 255, 1::1>>, 17} in less
+    assert t == {0, nil, [{<<128, 1, 2, 3>>, 42}]}
+  end
 
-    less = less(t, <<255, 255>>)
-    assert Enum.count(less) == 2
-    assert {<<255>>, 8} in less
-    assert {<<255, 255>>, 16} in less
+  test "put replaces any existing {k,v}-pair" do
+    t =
+      new()
+      |> put(<<128, 1, 2, 3>>, 42)
+      |> put(<<128, 1, 2, 3>>, "42")
 
-    less = less(t, <<255>>)
-    assert Enum.count(less) == 1
-    assert {<<255>>, 8} in less
+    assert t == {0, nil, [{<<128, 1, 2, 3>>, "42"}]}
 
-    # keys without less specifics
-    assert less(t, <<>>) == []
+    t =
+      new()
+      |> put(<<1>>, 1)
+      |> put(<<1>>, "one")
+      |> put(<<128>>, 128)
+      |> put(<<>>, 0)
+
+    assert get(t, <<>>) == {<<>>, 0}
+    assert get(t, <<1>>) == {<<1>>, "one"}
+    assert get(t, <<128>>) == {<<128>>, 128}
+
+    # empty key also gets replaced
+    t = put(t, <<>>, "null")
+    assert get(t, <<>>) == {<<>>, "null"}
+    assert get(t, <<1>>) == {<<1>>, "one"}
+    assert get(t, <<128>>) == {<<128>>, 128}
   end
 
   # Radix.reduce/3
+  test "reduce/3 validates input" do
+    fun2 = fn _, _ -> nil end
+    fun3 = fn _, _, _ -> nil end
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> reduce(t, 0, fun3) end)
+    assert_raise ArgumentError, fn -> reduce(new(), 0, fun2) end
+    assert_raise(RadixError, fn -> reduce(@broken_left_tree, 0, fun3) end)
+    assert_raise(RadixError, fn -> reduce(@broken_right_tree, 0, fun3) end)
+  end
+
   test "reduce/3 visits all k,v-pairs" do
     t =
       new()
@@ -792,6 +823,14 @@ defmodule RadixTest do
   end
 
   # Radix.split/3
+  test "split/3 validates input" do
+    # 3rd arg is opts
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> split(t, [<<0>>]) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> split(new(), [k]) end)
+    assert_raise(RadixError, fn -> split(@broken_left_tree, [<<0>>]) end)
+    assert_raise(RadixError, fn -> split(@broken_right_tree, [<<0>>, <<255>>]) end)
+  end
+
   test "split/3 splits a radix tree into two trees" do
     t =
       new()
@@ -838,6 +877,13 @@ defmodule RadixTest do
   end
 
   # Radix.take/3
+  test "take/3 validates input" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> take(t, [<<>>]) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> take(new(), [k]) end)
+    assert_raise(RadixError, fn -> take(@broken_left_tree, [<<0>>]) end)
+    assert_raise(RadixError, fn -> take(@broken_right_tree, [<<255>>]) end)
+  end
+
   test "take/3 returns a new tree with specified keys" do
     t =
       new()
@@ -889,6 +935,12 @@ defmodule RadixTest do
   end
 
   # Radix.to_list/1
+  test "to_list/1 validates input" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> to_list(t) end)
+    assert_raise(RadixError, fn -> to_list(@broken_left_tree) end)
+    assert_raise(RadixError, fn -> to_list(@broken_right_tree) end)
+  end
+
   test "to_list/1 lists all k,v-pairs" do
     t =
       new()
@@ -910,40 +962,58 @@ defmodule RadixTest do
     assert Enum.reduce(kvs, 0, fn {_k, v}, acc -> v + acc end) == Enum.sum(1..12)
   end
 
-  # Radix.keys/1
-  test "keys/1 lists all keys" do
+  # Radix.update/3
+  test "update/3 validates input" do
+    goodfun = fn _ -> nil end
+    badfun = fn -> 0 end
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> update(t, <<0>>, 0, goodfun) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> update(new(), k, 0, goodfun) end)
+    assert_raise(ArgumentError, fn -> update(new(), <<0>>, 0, badfun) end)
+    assert_raise(RadixError, fn -> update(@broken_left_tree, <<0>>, 0, goodfun) end)
+    assert_raise(RadixError, fn -> update(@broken_left_tree, <<255>>, 0, goodfun) end)
+  end
+
+  test "update/3" do
+    increment = fn x -> x + 1 end
+
     t =
       new()
-      |> put(<<255>>, 1)
-      |> put(<<255, 255>>, 2)
-      |> put(<<255, 255, 1::1>>, 3)
-      |> put(<<255, 255, 3::2>>, 4)
-      |> put(<<128>>, 5)
-      |> put(<<128, 128>>, 6)
-      |> put(<<128, 128, 1::1>>, 7)
-      |> put(<<128, 128, 3::2>>, 8)
-      |> put(<<0>>, 9)
-      |> put(<<0, 0>>, 10)
-      |> put(<<0, 0, 0::1>>, 11)
-      |> put(<<0, 0, 0::2>>, 12)
+      |> put(<<128, 128, 128>>, 0)
+      |> put(<<128, 128, 128, 1::1>>, 0)
+      |> put(<<128, 128, 128, 2::2>>, 0)
 
-    keys = keys(t)
-    assert Enum.count(keys) == 12
-    assert <<255>> in keys
-    assert <<255, 255>> in keys
-    assert <<255, 255, 1::1>> in keys
-    assert <<255, 255, 3::2>> in keys
-    assert <<128>> in keys
-    assert <<128, 128>> in keys
-    assert <<128, 128, 1::1>> in keys
-    assert <<128, 128, 3::2>> in keys
-    assert <<0>> in keys
-    assert <<0, 0>> in keys
-    assert <<0, 0, 0::1>> in keys
-    assert <<0, 0, 0::2>> in keys
+    assert lookup(t, <<128, 128, 128>>) == {<<128, 128, 128>>, 0}
+    assert lookup(t, <<128, 128, 128, 1::1>>) == {<<128, 128, 128, 1::1>>, 0}
+    assert lookup(t, <<128, 128, 128, 2::2>>) == {<<128, 128, 128, 2::2>>, 0}
+    assert lookup(t, <<>>) == nil
+
+    # <<0>> not in tree yet, gets default value of 1
+    t = update(t, <<0>>, 1, increment)
+    assert get(t, <<0>>) == {<<0>>, 1}
+
+    # <<>> not in tree yet, gets default value of 1
+    t = update(t, <<>>, 1, increment)
+    assert get(t, <<>>) == {<<>>, 1}
+    assert lookup(t, <<255>>) == {<<>>, 1}
+
+    # these all exist and get incremented to 1
+    t = update(t, <<128, 128, 128>>, -1, increment)
+    assert get(t, <<128, 128, 128>>) == {<<128, 128, 128>>, 1}
+
+    t = update(t, <<128, 128, 128, 1::1>>, -1, increment)
+    assert get(t, <<128, 128, 128, 1::1>>) == {<<128, 128, 128, 1::1>>, 1}
+
+    t = update(t, <<128, 128, 128, 2::2>>, -1, increment)
+    assert get(t, <<128, 128, 128, 2::2>>) == {<<128, 128, 128, 2::2>>, 1}
   end
 
   # Radix.values/1
+  test "values/1 validates input" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> values(t) end)
+    assert_raise(RadixError, fn -> values(@broken_left_tree) end)
+    assert_raise(RadixError, fn -> values(@broken_right_tree) end)
+  end
+
   test "values/1 lists all values" do
     t =
       new()
@@ -966,6 +1036,15 @@ defmodule RadixTest do
   end
 
   # Radix.walk/4
+  test "walk/4 validates input" do
+    goodfun = fn _, _ -> nil end
+    badfun = fn -> nil end
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> walk(t, 0, goodfun) end)
+    assert_raise(ArgumentError, fn -> walk(new(), 0, badfun) end)
+    assert_raise(RadixError, fn -> walk(@broken_left_tree, 0, goodfun) end)
+    assert_raise(RadixError, fn -> walk(@broken_right_tree, 0, goodfun) end)
+  end
+
   test "walk/4 visits all nodes - in-order" do
     t =
       new()

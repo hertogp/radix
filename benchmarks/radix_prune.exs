@@ -14,10 +14,10 @@ end
 
 Benchee.run(%{
   "prune_rdx8bit__once" => fn -> Radix.prune(rdx8bit, fun) end,
-  "prune_rdx16bit_once" => fn -> Radix.prune(rdx16bit, fun) end
+  "prune_rdx8bit__recursive" => fn -> Radix.prune(rdx8bit, fun, recurse: true) end
 })
 
 Benchee.run(%{
-  "prune_rdx8bit__recursive" => fn -> Radix.prune(rdx8bit, fun, recurse: true) end,
+  "prune_rdx16bit_once" => fn -> Radix.prune(rdx16bit, fun) end,
   "prune_rdx16bit_recursive" => fn -> Radix.prune(rdx16bit, fun, recurse: true) end
 })
