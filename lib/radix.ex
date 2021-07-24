@@ -729,7 +729,6 @@ defmodule Radix do
                [{<<1, 1, 1, 1>>, 32}]
            },
         nil}
-      #
       iex> delete(t, <<1, 1, 0>>)
       {0, {23, [{<<1, 1>>, 16}],
                [{<<1, 1, 1, 1>>, 32}]
@@ -764,7 +763,6 @@ defmodule Radix do
                [{<<1, 1, 1, 1>>, 32}]
            },
         nil}
-      #
       iex> drop(t, [<<1, 1>>, <<1, 1, 1, 1>>])
       {0, [{<<1, 1, 0>>, 24}], nil}
 
@@ -859,7 +857,6 @@ defmodule Radix do
       iex> t = new([{<<>>, 0}, {<<1>>, 1}, {<<1, 1>>, 2}])
       iex> fetch(t, <<1, 1>>)
       {:ok, {<<1, 1>>, 2}}
-      iex>
       iex> fetch(t, <<2>>)
       :error
       iex> fetch(t, <<2>>, match: :lpm)
@@ -889,10 +886,8 @@ defmodule Radix do
       iex> t = new([{<<1>>, 1}, {<<1, 1>>, 2}])
       iex> fetch!(t, <<1, 1>>)
       {<<1, 1>>, 2}
-      iex>
       iex> fetch!(t, <<2>>)
       ** (KeyError) key not found <<0b10>>
-      iex>
       iex> fetch!(t, <<1, 1, 1>>, match: :lpm)
       {<<1, 1>>, 2}
 
@@ -925,8 +920,8 @@ defmodule Radix do
       {<<1, 1>>, 16}
       iex> get(t, <<1, 1, 0::1>>)
       nil
-      iex> get(t, <<1, 1, 0::1>>, "oops")
-      "oops"
+      iex> get(t, <<1, 1, 0::1>>, :notfound)
+      :notfound
 
   """
   @spec get(tree, key, any) :: {key, value} | any
@@ -959,7 +954,6 @@ defmodule Radix do
       ...>  {<<1, 1, 1>>, "1.1.1.0/24"},
       ...>  {<<3>>, "3.0.0.0/8"},
       ...>  ])
-      iex>
       iex> keys(t)
       [<<1, 1, 1, 0::1>>, <<1, 1, 1>>, <<1, 1, 1, 1::1>>, <<3>>]
   """
@@ -989,13 +983,10 @@ defmodule Radix do
       ...>  {<<1, 1, 1, 1>>, 32}
       ...> ]
       iex> t = new(elements)
-      iex>
       iex> less(t, <<1, 1, 1, 1>>)
       [{<<1, 1, 1, 1>>, 32}, {<<1, 1>>, 16}]
-      #
       iex> less(t, <<1, 1, 0>>)
       [{<<1, 1, 0>>, 24}, {<<1, 1>>, 16}]
-      #
       iex> less(t, <<2, 2>>)
       []
 
@@ -1024,13 +1015,10 @@ defmodule Radix do
       iex> t = new(elms)
       iex> lookup(t, <<1, 1, 0, 127>>)
       {<<1, 1, 0, 0::1>>, 25}
-      #
       iex> lookup(t, <<1, 1, 0, 128>>)
       {<<1, 1, 0>>, 24}
-      #
       iex> lookup(t, <<1, 1, 1, 1>>)
       {<<1, 1>>, 16}
-      #
       iex> lookup(t, <<2, 2, 2, 2>>)
       nil
 
@@ -1129,13 +1117,10 @@ defmodule Radix do
       ...>  {<<1, 1, 1, 1>>, 32}
       ...> ]
       iex> t = new(elements)
-      iex>
       iex> more(t, <<1, 1, 0>>)
       [{<<1, 1, 0, 0>>, 32}, {<<1, 1, 0>>, 24}]
-      #
       iex> more(t, <<1, 1, 1>>)
       [{<<1, 1, 1, 1>>, 32}]
-      #
       iex> more(t, <<2>>)
       []
 
@@ -1219,8 +1204,8 @@ defmodule Radix do
       }
 
       # pop using longest prefix match
-      iex> t = new([{<<1, 1, 1>>, "1.1.1.0/24"}, {<<1, 1, 1, 1::1>>, "1.1.1.128/25"}])
-      iex> pop(t, <<1, 1, 1, 255>>, match: :lpm)
+      iex> new([{<<1, 1, 1>>, "1.1.1.0/24"}, {<<1, 1, 1, 1::1>>, "1.1.1.128/25"}])
+      ...> |> pop(<<1, 1, 1, 255>>, match: :lpm)
       {
         {<<1, 1, 1, 1::1>>, "1.1.1.128/25"},
         {0, [{<<1, 1, 1>>, "1.1.1.0/24"}], nil}
@@ -1270,11 +1255,9 @@ defmodule Radix do
       ...> |> put(<<1, 1, 1, 0::1>>, 1)
       ...> |> put(<<1, 1, 1, 1::1>>, 2)
       ...> |> put(<<1, 1, 0>>, 3)
-      iex>
       iex> # prune, once
       iex> prune(t, adder)
       {0, {23, [{<<1, 1, 0>>, 3}], [{<<1, 1, 1>>, 3}]}, nil}
-      iex>
       iex>  # prune, recursively
       iex> prune(t, adder, recurse: true)
       {0, [{<<1, 1, 0::size(7)>>, 6}], nil}
@@ -1285,7 +1268,6 @@ defmodule Radix do
       iex> new(for x <- 0..255, do: {<<x>>, x})
       ...> |> prune(adder, recurse: true)
       {0, [{<<>>, 32640}], nil}
-      iex>
       iex> Enum.sum(0..255)
       32640
 
@@ -1354,7 +1336,8 @@ defmodule Radix do
   ## Examples
 
       iex> elements = [{<<1, 1>>, "1.1.0.0/16"}, {<<1, 1, 1, 1>>, "1.1.1.1"}]
-      iex> new() |> put(elements)
+      iex> new()
+      ...> |> put(elements)
       {0,
         {23, [{<<1, 1>>, "1.1.0.0/16"}],
              [{<<1, 1, 1, 1>>, "1.1.1.1"}]},
@@ -1392,7 +1375,6 @@ defmodule Radix do
              [{<<1, 1, 1, 1>>, "x.x.x.x"}]},
         nil
       }
-      #
       iex> put(t, <<1, 1, 1, 1>>, "1.1.1.1")
       {0,
         {23, [{<<1, 1>>, "1.1.0.0/16"}],
@@ -1432,9 +1414,6 @@ defmodule Radix do
       ...>  {<<1, 1, 1>>, "1.1.1.0/24"},
       ...>  {<<3>>, "3.0.0.0/8"},
       ...>  ])
-      iex>
-      iex> # get values
-      iex>
       iex> f = fn _key, value, acc -> [value | acc] end
       iex> reduce(t, [], f) |> Enum.reverse()
       ["1.1.1.0/25", "1.1.1.0/24", "1.1.1.128/25", "3.0.0.0/8"]
@@ -1468,19 +1447,15 @@ defmodule Radix do
 
       iex> tree = new([{<<0>>, 0}, {<<1>>, 1}, {<<2>>, 2}, {<<3>>, 3}])
       iex> {t1, t2} = split(tree, [<<0>>, <<2>>])
-      iex>
       iex> keys(t1)
       [<<0>>, <<2>>]
-      iex>
       iex> keys(t2)
       [<<1>>, <<3>>]
 
       iex> tree = new([{<<0>>, 0}, {<<1>>, 1}, {<<2>>, 2}, {<<3>>, 3}])
       iex> {t1, t2} = split(tree, [<<0, 0>>, <<2, 0>>], match: :lpm)
-      iex>
       iex> keys(t1)
       [<<0>>, <<2>>]
-      iex>
       iex> keys(t2)
       [<<1>>, <<3>>]
 
@@ -1516,7 +1491,7 @@ defmodule Radix do
       ...> |> to_list()
       [{<<>>, nil}, {<<1>>, 1}, {<<255>>, 255}]
 
-      # longest prefix match
+      # using longest prefix match
       iex> new([{<<>>, nil}, {<<0>>, 0}, {<<1>>, 1}, {<<128>>, 128}, {<<255>>, 255}])
       ...> |> take([<<2, 2, 2, 2>>, <<1, 1, 1, 1>>, <<255, 255, 0, 0>>], match: :lpm)
       ...> |> to_list()
@@ -1551,13 +1526,13 @@ defmodule Radix do
 
   ## Example
 
-      iex> tree = new([
+      iex> new([
       ...>  {<<1, 1, 1, 0::1>>, "1.1.1.0/25"},
       ...>  {<<1, 1, 1, 1::1>>, "1.1.1.128/25"},
       ...>  {<<3>>, "3.0.0.0/8"},
       ...>  {<<1, 1, 1>>, "1.1.1.0/24"}
       ...>  ])
-      iex> to_list(tree)
+      ...> |> to_list()
       [
         {<<1, 1, 1, 0::1>>, "1.1.1.0/25"},
         {<<1, 1, 1>>, "1.1.1.0/24"},
@@ -1577,6 +1552,70 @@ defmodule Radix do
   end
 
   def to_list(tree),
+    do: raise(arg_err(:bad_tree, tree))
+
+  @doc """
+  Updates a key,value-pair in `tree` by invoking `fun` after a longest prefix
+  match lookup.
+
+  After a longest prefix match lookup for given search `key`, the callback `fun`
+  is called with:
+  - `{:matched, matching_key, value}`, in case there was a match
+  - `{:nomatch, original_key}`, in case there was no match
+
+  If the callback `fun` returns `{:ok, key, value}`, then _value_ will be stored
+  under _key_ in the given `tree`.  Anything else will return the `tree`
+  unchanged.
+
+  ## Examples
+
+      iex> max24bits = fn key when bit_size(key) > 24 ->
+      ...>                  <<bits::bitstring-size(24), _::bitstring>> = key; <<bits::bitstring>>
+      ...>                key -> key
+      ...>             end
+      iex>
+      iex> counter = fn {k, v} -> {:ok, k, v + 1}
+      ...>              {k} -> {:ok, max24bits.(k), 1}
+      ...>           end
+      iex> new()
+      ...> |> update(<<1, 1, 1, 1>>, counter)
+      ...> |> update(<<1, 1, 1, 128>>, counter)
+      ...> |> update(<<1, 1, 1, 255>>, counter)
+      {0, [{<<1, 1, 1>>, 3}], nil}
+
+      # only interested in known prefixes
+      iex> counter = fn {k, v} -> {:ok, k, v + 1}
+      ...>               _discard -> nil
+      ...>           end
+      iex> new()
+      ...> |> put(<<1, 1, 1>>, 0)
+      ...> |> update(<<1, 1, 1, 1>>, counter)
+      ...> |> update(<<1, 1, 1, 2>>, counter)
+      ...> |> update(<<2, 2, 2, 2>>, counter)
+      {0, [{<<1, 1, 1>>, 2}], nil}
+
+  """
+  @spec update(tree, key, ({key} | {key, value} -> nil | {:ok, key, value})) :: tree
+  def update({0, _, _} = tree, key, fun) when is_bitstring(key) and is_function(fun, 1) do
+    result =
+      case lookup(tree, key) do
+        nil -> fun.({key})
+        {k0, v0} -> fun.({k0, v0})
+      end
+
+    case result do
+      {:ok, k, v} -> put(tree, k, v)
+      _ -> tree
+    end
+  end
+
+  def update({0, _, _} = _tree, key, fun) when is_bitstring(key),
+    do: raise(arg_err(:bad_fun, {fun, 1}))
+
+  def update({0, _, _} = _tree, key, fun) when is_function(fun, 1),
+    do: raise(arg_err(:bad_key, key))
+
+  def update(tree, _key, _fun),
     do: raise(arg_err(:bad_tree, tree))
 
   @doc """
@@ -1623,78 +1662,17 @@ defmodule Radix do
     do: raise(arg_err(:bad_key, key))
 
   @doc """
-  Updates a key,value-pair in `tree` by invoking `fun` for a resulting value.
-
-  After a longest prefix match lookup for given search `key`, the callback `fun`
-  is called with:
-  - `{:matched, matching_key, value}`, in case there was a match
-  - `{:nomatch, original_key}`, in case there was no match
-
-  In both cases, the callback `fun` must return one of:
-  - `{:ok, key, value}`, which stores `value` under `key` in the given `tree`, or
-  - `nil` (or anything else but the `{:ok, k, v}` really), which means `tree` will be returned unchanged.
-
-  ## Examples
-
-      iex> max24bits = fn key when bit_size(key) > 24 ->
-      ...>                  <<bits::bitstring-size(24), _::bitstring>> = key; <<bits::bitstring>>
-      ...>                key -> key
-      ...>             end
-      iex>
-      iex> counter = fn {:matched, k, v} -> {:ok, k, v + 1}
-      ...>              {:nomatch,  k} -> {:ok, max24bits.(k), 1}
-      ...>           end
-      iex> t = new()
-      iex> t = update(t, <<1, 1, 1, 1>>, counter)
-      iex> t
-      {0, [{<<1, 1, 1>>, 1}], nil}
-      iex> t = update(t, <<1, 1, 1, 255>>, counter)
-      iex> t
-      {0, [{<<1, 1, 1>>, 2}], nil}
-      iex> t = update(t, <<1, 1, 1, 255>>, counter)
-      iex> t
-      {0, [{<<1, 1, 1>>, 3}], nil}
-
-  """
-  @spec update(tree, key, ({:nomatch, key} | {:matched, key, value} -> nil | {:ok, key, value})) ::
-          tree
-  def update({0, _, _} = tree, key, fun) when is_bitstring(key) and is_function(fun, 1) do
-    result =
-      case lookup(tree, key) do
-        nil -> fun.({:nomatch, key})
-        {k0, v0} -> fun.({:matched, k0, v0})
-      end
-
-    case result do
-      {:ok, k, v} -> put(tree, k, v)
-      _ -> tree
-    end
-  end
-
-  def update({0, _, _} = _tree, key, fun) when is_bitstring(key),
-    do: raise(arg_err(:bad_fun, {fun, 1}))
-
-  def update({0, _, _} = _tree, key, fun) when is_function(fun, 1),
-    do: raise(arg_err(:bad_key, key))
-
-  def update(tree, _fun),
-    do: raise(arg_err(:bad_tree, tree))
-
-  @doc """
   Returns all values stored in the radix `tree`.
 
   ## Example
 
-      iex> t = new([
+      iex> new([
       ...>  {<<1, 1, 1, 0::1>>, "1.1.1.0/25"},
       ...>  {<<1, 1, 1, 1::1>>, "1.1.1.128/25"},
       ...>  {<<1, 1, 1>>, "1.1.1.0/24"},
       ...>  {<<3>>, "3.0.0.0/8"},
       ...>  ])
-      iex>
-      iex> # get values
-      iex>
-      iex> values(t)
+      ...> |> values()
       ["1.1.1.0/25", "1.1.1.0/24", "1.1.1.128/25", "3.0.0.0/8"]
   """
   @spec values(tree) :: [value]
@@ -1722,13 +1700,11 @@ defmodule Radix do
   ## Example
 
       iex> t = new([{<<1>>, 1}, {<<2>>, 2}, {<<3>>, 3}, {<<128>>, 128}])
-      iex>
       iex> f = fn
       ...>   (acc, {_bit, _left, _right}) -> acc
       ...>   (acc, nil) -> acc
       ...>   (acc, leaf) -> acc ++ Enum.map(leaf, fn {_k, v} -> v end)
       ...> end
-      iex>
       iex> walk(t, [], f)
       [1, 2, 3, 128]
 

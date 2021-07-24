@@ -962,6 +962,54 @@ defmodule RadixTest do
     assert Enum.reduce(kvs, 0, fn {_k, v}, acc -> v + acc end) == Enum.sum(1..12)
   end
 
+  # Radix.update/3
+  test "update/3 validates input" do
+    goodfun = fn _ -> nil end
+    badfun = fn -> 0 end
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> update(t, <<0>>, goodfun) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> update(new(), k, goodfun) end)
+    assert_raise(ArgumentError, fn -> update(new(), <<0>>, badfun) end)
+    assert_raise(RadixError, fn -> update(@broken_left_tree, <<0>>, goodfun) end)
+    assert_raise(RadixError, fn -> update(@broken_left_tree, <<255>>, goodfun) end)
+  end
+
+  test "update/3" do
+    increment = fn
+      {k, v} -> {:ok, k, v + 1}
+      {k} -> {:ok, k, 1}
+    end
+
+    t =
+      new()
+      |> put(<<128, 128, 128>>, 0)
+      |> put(<<128, 128, 128, 1::1>>, 0)
+      |> put(<<128, 128, 128, 2::2>>, 0)
+
+    assert lookup(t, <<128, 128, 128>>) == {<<128, 128, 128>>, 0}
+    assert lookup(t, <<128, 128, 128, 1::1>>) == {<<128, 128, 128, 1::1>>, 0}
+    assert lookup(t, <<128, 128, 128, 2::2>>) == {<<128, 128, 128, 2::2>>, 0}
+    assert lookup(t, <<>>) == nil
+
+    # <<0>> not in tree yet, gets default value of 1
+    t = update(t, <<0>>, increment)
+    assert get(t, <<0>>) == {<<0>>, 1}
+
+    # <<>> not in tree yet, gets default value of 1
+    t = update(t, <<>>, increment)
+    assert get(t, <<>>) == {<<>>, 1}
+    assert lookup(t, <<255>>) == {<<>>, 1}
+
+    # these all exist and get incremented to 1
+    t = update(t, <<128, 128, 128>>, increment)
+    assert get(t, <<128, 128, 128>>) == {<<128, 128, 128>>, 1}
+
+    t = update(t, <<128, 128, 128, 1::1>>, increment)
+    assert get(t, <<128, 128, 128, 1::1>>) == {<<128, 128, 128, 1::1>>, 1}
+
+    t = update(t, <<128, 128, 128, 2::2>>, increment)
+    assert get(t, <<128, 128, 128, 2::2>>) == {<<128, 128, 128, 2::2>>, 1}
+  end
+
   # Radix.update/4
   test "update/4 validates input" do
     goodfun = fn _ -> nil end
