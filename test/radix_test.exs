@@ -17,6 +17,7 @@ defmodule RadixTest do
     fun2 = fn _, _ -> nil end
     fun3 = fn _, _, _ -> nil end
 
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> count(t) end)
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> delete(t, key) end)
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> dot(t) end)
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> drop(t, [key]) end)
@@ -117,6 +118,40 @@ defmodule RadixTest do
     more(broken_tree, key)
   end
 
+  # Radix.adjacencies/1
+  test "adjacencies/1 returns a map of parents with 2 kids" do
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> adjacencies(t) end)
+
+    # empty tree yields an empty map
+    m = adjacencies(new())
+    assert map_size(m) == 0
+
+    # two neighbors
+    t = new([{<<128, 128, 128, 0>>, 0}, {<<128, 128, 128, 1>>, 1}])
+
+    assert adjacencies(t) == %{
+             <<128, 128, 128, 0::7>> => {<<128, 128, 128, 0>>, 0, <<128, 128, 128, 1>>, 1}
+           }
+
+    # only two are neighbors
+    t = new([{<<128, 128, 128, 0>>, 0}, {<<128, 128, 128, 1>>, 1}, {<<128, 128, 128, 2>>, 2}])
+
+    assert adjacencies(t) == %{
+             <<128, 128, 128, 0::7>> => {<<128, 128, 128, 0>>, 0, <<128, 128, 128, 1>>, 1}
+           }
+
+    t = new([{<<255>>, 255}, {<<254>>, 254}, {<<253>>, 253}, {<<252>>, 252}])
+
+    assert adjacencies(t) == %{
+             <<127::7>> => {<<254>>, 254, <<255>>, 255},
+             <<126::7>> => {<<252>>, 252, <<253>>, 253}
+           }
+
+    t = new([{<<1::1>>, 1}, {<<0::1>>, 0}])
+
+    assert adjacencies(t) == %{<<>> => {<<0::1>>, 0, <<1::1>>, 1}}
+  end
+
   # Radix.new/0
   test "new, empty radix tree" do
     t = new()
@@ -127,6 +162,31 @@ defmodule RadixTest do
   test "new, radix tree initialized with list of {k,v}-pairs" do
     t = new([{<<1, 1, 1, 1>>, 1}, {<<0, 0, 0, 0>>, 0}])
     assert t == {0, {7, [{<<0, 0, 0, 0>>, 0}], [{<<1, 1, 1, 1>>, 1}]}, nil}
+  end
+
+  # Radix.prune/2
+  test "prune/2 requires valid input" do
+    goodfun = fn _ -> nil end
+    badfun = fn _, _ -> nil end
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> prune(t, goodfun) end)
+    assert_raise ArgumentError, fn -> prune(new(), badfun) end
+  end
+
+  test "prune/2 prunes once or recursively" do
+    f = fn
+      {_k0, _k1, v1, _k2, v2} -> {:ok, v1 + v2}
+      {_k0, v0, _k1, v1, _k2, v2} -> {:ok, v0 + v1 + v2}
+    end
+
+    t = new(for x <- 0..255, do: {<<x>>, x})
+    t0 = prune(t, f)
+    t1 = prune(t, f, recurse: true)
+
+    assert count(t) == 256
+    assert count(t0) == 128
+    assert count(t1) == 1
+    assert t1 == {0, [{"", 32640}], nil}
+    assert Enum.sum(0..255) == get(t1, <<>>) |> elem(1)
   end
 
   # Radix.put/2

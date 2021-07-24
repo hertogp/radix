@@ -108,6 +108,25 @@ defmodule Radix do
 
   # Helpers
 
+  # action to take given a new, candidate key and a leaf
+  #  :take   if the leaf is nil and thus free
+  #  :update if the candidate key is already present in the leaf
+  #  :add    if the candidate shares the leaf's common prefix
+  #  :split  if the candidate does not share the leaf's common prefix
+  @spec action(leaf, key) :: :take | :update | :add | :split
+  defp action(nil, _key),
+    do: :take
+
+  defp action([{k, _v} | _tail] = leaf, key) do
+    pad1 = max(0, bit_size(key) - bit_size(k))
+    pad2 = max(0, bit_size(k) - bit_size(key))
+
+    case <<k::bitstring, 0::size(pad1)>> == <<key::bitstring, 0::size(pad2)>> do
+      false -> :split
+      true -> (keyget(leaf, key, bit_size(key)) && :update) || :add
+    end
+  end
+
   # consistent ArgumentError's
   @spec arg_err(atom, any) :: Exception.t()
   defp arg_err(:bad_keyvals, arg),
@@ -128,15 +147,12 @@ defmodule Radix do
   defp arg_err(:bad_fun, {fun, arity}),
     do: ArgumentError.exception("expected a function with arity #{arity}, got #{inspect(fun)}")
 
-  # a RadixError is raised for corrupt nodes or bad keys in a list
-  @spec error(atom, any) :: RadixError.t()
-  defp error(reason, data),
-    do: RadixError.exception(reason, data)
-
   # bit
   # - extract the value of a bit in a key
   # - bits beyond the key-length are considered `0`
   @spec bit(key, bitpos) :: 0 | 1
+  defp bit(<<>>, _pos), do: 0
+
   defp bit(key, pos) when pos > bit_size(key) - 1,
     do: 0
 
@@ -145,57 +161,81 @@ defmodule Radix do
     bit
   end
 
-  # follow key-path and return a leaf (which might be nil)
-  # - inlining bit check doesn't really speed things up
-  @spec leaf(tree | leaf, key, non_neg_integer) :: leaf
-  defp leaf({bit, l, r}, key, max) when bit < max do
-    <<_::size(bit), bit::1, _::bitstring>> = key
-
-    case(bit) do
-      0 -> leaf(l, key, max)
-      1 -> leaf(r, key, max)
+  # delete a {k,v}-pair from the tree
+  @spec deletep(tree | leaf, key) :: tree | leaf
+  defp deletep({bit, l, r}, key) do
+    case bit(key, bit) do
+      0 -> deletep({bit, deletep(l, key), r})
+      1 -> deletep({bit, l, deletep(r, key)})
     end
   end
 
-  # go left on masked off bits
-  defp leaf({_, l, _}, key, max),
-    do: leaf(l, key, max)
+  # key wasn't in the tree
+  defp deletep(nil, _key),
+    do: nil
 
-  # not a tuple, so it's a leaf
-  defp leaf(leaf, _key, _max),
-    do: leaf
-
-  # action to take given a new, candidate key and a leaf
-  #  :take   if the leaf is nil and thus free
-  #  :update if the candidate key is already present in the leaf
-  #  :add    if the candidate shares the leaf's common prefix
-  #  :split  if the candidate does not share the leaf's common prefix
-  @spec action(leaf, key) :: :take | :update | :add | :split
-  defp action(nil, _key),
-    do: :take
-
-  defp action([{k, _v} | _tail] = leaf, key) do
-    pad1 = max(0, bit_size(key) - bit_size(k))
-    pad2 = max(0, bit_size(k) - bit_size(key))
-
-    case <<k::bitstring, 0::size(pad1)>> == <<key::bitstring, 0::size(pad2)>> do
-      false -> :split
-      true -> (keyget(leaf, key, bit_size(key)) && :update) || :add
+  # key leads to leaf
+  defp deletep([{_, _} | _tail] = leaf, key) do
+    case List.keydelete(leaf, key, 0) do
+      [] -> nil
+      leaf -> leaf
     end
   end
 
-  # say whether `k` is a prefix of `key`
-  @spec prefix?(key, key) :: boolean
-  defp prefix?(k, key) when bit_size(k) > bit_size(key),
-    do: false
+  # got a bad tree
+  defp deletep(tree, _key),
+    do: raise(error(:badnode, tree))
 
-  defp prefix?(k, key) do
-    len = bit_size(k)
-    <<key::bitstring-size(len), _::bitstring>> = key
-    k == key
+  # always keep the root, eliminate empty nodes and promote half-empty nodes
+  defp deletep({0, l, r}), do: {0, l, r}
+  defp deletep({_, nil, nil}), do: nil
+  defp deletep({_, l, nil}), do: l
+  defp deletep({_, nil, r}), do: r
+  defp deletep({bit, l, r}), do: {bit, l, r}
+
+  # a RadixError is raised for corrupt nodes or bad keys in a list
+  @spec error(atom, any) :: RadixError.t()
+  defp error(reason, data),
+    do: RadixError.exception(reason, data)
+
+  @spec flip(key) :: key
+  defp flip(<<>>),
+    do: <<>>
+
+  defp flip(key) do
+    pos = bit_size(key) - 1
+    <<bits::bitstring-size(pos), bit::1>> = key
+
+    case bit do
+      0 -> <<bits::bitstring-size(pos), 1::1>>
+      1 -> <<bits::bitstring-size(pos), 0::1>>
+    end
   end
 
-  # Leaf helpers
+  # keydiff
+  # - find the first bit where two keys differ
+  # - but for two *equal* keys, the last bit's position is returned.
+  # - if one key is a prefix for the other, returns the last bitpos of shorter key
+  # - for a leaf, only need to check the first/longest key
+  # - the bit position is used to determine if/when to branch the tree during put
+
+  @spec keydiff(leaf, key) :: bitpos
+  defp keydiff([{k, _v} | _tail], key),
+    do: keydiff(k, key, 0)
+
+  # stop recursion once longest key is exhausted
+  @spec keydiff(key, key, bitpos) :: bitpos
+  defp keydiff(k, key, pos) when pos < bit_size(k) or pos < bit_size(key) do
+    case bit(key, pos) == bit(k, pos) do
+      true -> keydiff(k, key, pos + 1)
+      false -> pos
+    end
+  end
+
+  # keep pos if outside both keys
+  defp keydiff(_key1, _key2, pos),
+    do: pos
+
   # given a leaf and a key, return either {key, value} (exact match) or nil
   # - k,v-pairs in a leaf are sorted from longer -> shorter keys
   @spec keyget(leaf, key, non_neg_integer) :: {key, value} | nil
@@ -216,6 +256,27 @@ defmodule Radix do
     do: nil
 
   defp keyget(leaf, _key, _kmax),
+    do: raise(error(:badleaf, leaf))
+
+  # given a leaf and a key, return either {key, value} (longest match) or nil
+  @spec keylpm(leaf, key, non_neg_integer) :: {key, value} | nil
+  defp keylpm([{k, _v} | tail], key, kmax) when is_bitstring(k) and bit_size(k) > kmax,
+    do: keylpm(tail, key, kmax)
+
+  defp keylpm([{k, v} | tail], key, kmax) when is_bitstring(k) do
+    len = bit_size(k)
+    <<key::bitstring-size(len), _::bitstring>> = key
+
+    case k == key do
+      true -> {k, v}
+      false -> keylpm(tail, key, kmax)
+    end
+  end
+
+  defp keylpm([], _key, _kmax),
+    do: nil
+
+  defp keylpm(leaf, _key, _kmax),
     do: raise(error(:badleaf, leaf))
 
   # get key's position (bitpos) in the tree
@@ -250,84 +311,25 @@ defmodule Radix do
   defp keypos(leaf, _key, _max, bitpos),
     do: {bitpos, leaf}
 
-  # given a leaf and a key, return either {key, value} (longest match) or nil
-  @spec keylpm(leaf, key, non_neg_integer) :: {key, value} | nil
-  defp keylpm([{k, _v} | tail], key, kmax) when is_bitstring(k) and bit_size(k) > kmax,
-    do: keylpm(tail, key, kmax)
+  # follow key-path and return a leaf (which might be nil)
+  # - inlining bit check doesn't really speed things up
+  @spec leaf(tree | leaf, key, non_neg_integer) :: leaf
+  defp leaf({bit, l, r}, key, max) when bit < max do
+    <<_::size(bit), bit::1, _::bitstring>> = key
 
-  defp keylpm([{k, v} | tail], key, kmax) when is_bitstring(k) do
-    len = bit_size(k)
-    <<key::bitstring-size(len), _::bitstring>> = key
-
-    case k == key do
-      true -> {k, v}
-      false -> keylpm(tail, key, kmax)
+    case(bit) do
+      0 -> leaf(l, key, max)
+      1 -> leaf(r, key, max)
     end
   end
 
-  defp keylpm([], _key, _kmax),
-    do: nil
+  # go left on masked off bits
+  defp leaf({_, l, _}, key, max),
+    do: leaf(l, key, max)
 
-  defp keylpm(leaf, _key, _kmax),
-    do: raise(error(:badleaf, leaf))
-
-  # keydiff
-  # - find the first bit where two keys differ
-  # - but for two *equal* keys, the last bit's position is returned.
-  # - if one key is a prefix for the other, returns the last bitpos of shorter key
-  # - for a leaf, only need to check the first/longest key
-  # - the bit position is used to determine if/when to branch the tree during put
-
-  @spec keydiff(leaf, key) :: bitpos
-  defp keydiff([{k, _v} | _tail], key),
-    do: keydiff(k, key, 0)
-
-  # stop recursion once longest key is exhausted
-  @spec keydiff(key, key, bitpos) :: bitpos
-  defp keydiff(k, key, pos) when pos < bit_size(k) or pos < bit_size(key) do
-    case bit(key, pos) == bit(k, pos) do
-      true -> keydiff(k, key, pos + 1)
-      false -> pos
-    end
-  end
-
-  # keep pos if outside both keys
-  defp keydiff(_key1, _key2, pos),
-    do: pos
-
-  # Tree helpers
-
-  # delete a {k,v}-pair from the tree
-  @spec deletep(tree | leaf, key) :: tree | leaf
-  defp deletep({bit, l, r}, key) do
-    case bit(key, bit) do
-      0 -> deletep({bit, deletep(l, key), r})
-      1 -> deletep({bit, l, deletep(r, key)})
-    end
-  end
-
-  # key wasn't in the tree
-  defp deletep(nil, _key),
-    do: nil
-
-  # key leads to leaf
-  defp deletep([{_, _} | _tail] = leaf, key) do
-    case List.keydelete(leaf, key, 0) do
-      [] -> nil
-      leaf -> leaf
-    end
-  end
-
-  # got a bad tree
-  defp deletep(tree, _key),
-    do: raise(error(:badnode, tree))
-
-  # always keep the root, eliminate empty nodes and promote half-empty nodes
-  defp deletep({0, l, r}), do: {0, l, r}
-  defp deletep({_, nil, nil}), do: nil
-  defp deletep({_, l, nil}), do: l
-  defp deletep({_, nil, r}), do: r
-  defp deletep({bit, l, r}), do: {bit, l, r}
+  # not a tuple, so it's a leaf
+  defp leaf(leaf, _key, _max),
+    do: leaf
 
   @spec lessp(tree | leaf, key) :: [{key, value}] | []
   defp lessp({b, l, r} = _tree, key) do
@@ -374,6 +376,14 @@ defmodule Radix do
   defp lookupp(leaf, key, kmax),
     do: keylpm(leaf, key, kmax)
 
+  defp match(opts) do
+    case Keyword.get(opts, :match) do
+      :longest -> &lookup/2
+      :lpm -> &lookup/2
+      _ -> &get/2
+    end
+  end
+
   # reverse prefix match: stored key is prefix of search key
   @spec morep(tree | leaf, key) :: [{key, value}]
   defp morep({b, l, r} = _tree, key) when bit_size(key) < b do
@@ -397,6 +407,25 @@ defmodule Radix do
     rescue
       FunctionClauseError -> raise error(:badleaf, leaf)
     end
+  end
+
+  # store or append key,val under its parent key in given map
+  @spec neighbors_collect(bitstring, any, map) :: map
+  defp neighbors_collect(key, val, acc) do
+    parent = trim(key)
+    kids = Map.get(acc, parent, [])
+    Map.put(acc, parent, [{key, val} | kids])
+  end
+
+  # say whether `k` is a prefix of `key`
+  @spec prefix?(key, key) :: boolean
+  defp prefix?(k, key) when bit_size(k) > bit_size(key),
+    do: false
+
+  defp prefix?(k, key) do
+    len = bit_size(k)
+    <<key::bitstring-size(len), _::bitstring>> = key
+    k == key
   end
 
   # put
@@ -442,12 +471,22 @@ defmodule Radix do
   end
 
   @spec reducep(tree, acc, (key, value, acc -> acc)) :: acc
-  defp reducep(tree, acc, fun)
   defp reducep(nil, acc, _fun), do: acc
   defp reducep([], acc, _fun), do: acc
   defp reducep({_, l, r}, acc, fun), do: reducep(r, reducep(l, acc, fun), fun)
   defp reducep([{k, v} | tail], acc, fun), do: reducep(tail, fun.(k, v, acc), fun)
   defp reducep(tree, _acc, _fun), do: raise(error(:badnode, tree))
+
+  # remove the last bit of a key
+  @spec trim(bitstring) :: bitstring
+  defp trim(<<>>),
+    do: <<>>
+
+  defp trim(key) do
+    len = bit_size(key) - 1
+    <<bits::size(len), _::bitstring>> = key
+    <<bits::size(len)>>
+  end
 
   # internal node
   defp walkp(acc, fun, {bit, l, r}, order) do
@@ -478,14 +517,6 @@ defmodule Radix do
 
   defp walkp(_acc, _fun, node, _order),
     do: raise(error(:badnode, node))
-
-  defp match(opts) do
-    case Keyword.get(opts, :match) do
-      :longest -> &lookup/2
-      :lpm -> &lookup/2
-      _ -> &get/2
-    end
-  end
 
   # DOT helpers
 
@@ -542,8 +573,22 @@ defmodule Radix do
   defp dotify(acc, {_n, nil}, _opts), do: acc
   defp dotify(acc, {n, leaf}, opts), do: node(acc, n, leaf, opts)
 
-  defp vertex(acc, _parent, {_, nil}, _port), do: acc
-  defp vertex(acc, parent, {child, _}, port), do: ["N#{parent}:#{port} -> N#{child};\n" | acc]
+  defp kv_tostr({<<>>, _value}),
+    do: "0/0"
+
+  defp kv_tostr({key, _value}) when is_bitstring(key) do
+    pad =
+      case rem(bit_size(key), 8) do
+        0 -> 0
+        n -> 8 - n
+      end
+
+    bytes = for <<(x::8 <- <<key::bitstring, 0::size(pad)>>)>>, do: x
+    "#{Enum.join(bytes, ".")}/#{bit_size(key)}"
+  end
+
+  defp kv_tostr(keyval),
+    do: raise(error(:badkeyval, keyval))
 
   defp node(acc, id, bit, opts) when is_integer(bit) do
     bgcolor =
@@ -589,24 +634,67 @@ defmodule Radix do
     ]
   end
 
-  defp kv_tostr({<<>>, _value}),
-    do: "0/0"
+  defp vertex(acc, _parent, {_, nil}, _port),
+    do: acc
 
-  defp kv_tostr({key, _value}) when is_bitstring(key) do
-    pad =
-      case rem(bit_size(key), 8) do
-        0 -> 0
-        n -> 8 - n
-      end
-
-    bytes = for <<(x::8 <- <<key::bitstring, 0::size(pad)>>)>>, do: x
-    "#{Enum.join(bytes, ".")}/#{bit_size(key)}"
-  end
-
-  defp kv_tostr(keyval),
-    do: raise(error(:badkeyval, keyval))
+  defp vertex(acc, parent, {child, _}, port),
+    do: ["N#{parent}:#{port} -> N#{child};\n" | acc]
 
   # API
+
+  @doc ~S"""
+  Returns a map where two neighboring key,value-pairs present in `tree`, are stored under their
+  'parent' key.
+
+  The parent key is 1 bit shorter than that of the two neighboring keys and stores:
+  - `{key1, val1, key2, val2}`, or
+  - `{key1, val1, key2, val2, val3}`
+
+  If the parent key exists in the `tree` as well, its value is included as the
+  fifth-element in the resulting tuple.
+
+  ## Example
+
+      iex> tree = new()
+      ...> |> put(<<1, 1, 1, 0::6>>, "1.1.1.0/30")
+      ...> |> put(<<1, 1, 1, 1::6>>, "1.1.1.4/30")
+      ...> |> put(<<1, 1, 1, 2::6>>, "1.1.1.8/30")
+      ...> |> put(<<1, 1, 1, 3::6>>, "1.1.1.12/30")
+      ...> |> put(<<1, 1, 1, 1::5>>, "1.1.1.8/29")
+      iex> adjacencies(tree)
+      %{
+        <<1, 1, 1, 0::5>> => {
+          <<1, 1, 1, 0::6>>, "1.1.1.0/30",
+          <<1, 1, 1, 1::6>>, "1.1.1.4/30"
+        },
+        <<1, 1, 1, 1::5>> => {
+          <<1, 1, 1, 2::6>>, "1.1.1.8/30",
+          <<1, 1, 1, 3::6>>, "1.1.1.12/30",
+          "1.1.1.8/29"}
+      }
+
+  """
+  @spec adjacencies(tree) :: map
+  def adjacencies({0, _, _} = tree) do
+    neighbors_keep = fn
+      {parent, [{k2, v2}, {k1, v1}]}, acc ->
+        case get(tree, parent) do
+          {^parent, v3} -> Map.put(acc, parent, {k1, v1, k2, v2, v3})
+          _ -> Map.put(acc, parent, {k1, v1, k2, v2})
+        end
+
+      _, acc ->
+        acc
+    end
+
+    reduce(tree, %{}, &neighbors_collect/3)
+    |> Enum.reduce(%{}, neighbors_keep)
+  rescue
+    err -> raise err
+  end
+
+  def adjacencies(tree),
+    do: raise(arg_err(:bad_tree, tree))
 
   @doc """
   Counts the number of entries by traversing given `tree`.
@@ -623,6 +711,9 @@ defmodule Radix do
   rescue
     err -> raise err
   end
+
+  def count(tree),
+    do: raise(arg_err(:bad_tree, tree))
 
   @doc """
   Deletes the entry from the `tree` for a specific `key` using an exact match.
@@ -717,17 +808,6 @@ defmodule Radix do
       ...> |> put(<<1, 1, 1::1>>, "left")
       ...> |> put(<<128, 0>>, "right")
       iex> g = dot(t, label: "example")
-      ["digraph Radix {\n  labelloc=\"t\";\n  label=\"example\";\n  rankdir=\"TB\";\n  ranksep=\"0.5 equally\";\n",
-        "N4 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N4\" BGCOLOR=\"green\">leaf</TD></TR>\n    <TR><TD>128.0/16</TD></TR>\n  </TABLE>\n  >, shape=\"plaintext\"];\n",
-        "N2 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N2\" BGCOLOR=\"green\">leaf</TD></TR>\n    <TR><TD>1.1.128/17</TD></TR>\n  </TABLE>\n  >, shape=\"plaintext\"];\n",
-        "N1 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N1\" BGCOLOR=\"green\">leaf</TD></TR>\n    <TR><TD>0.0/16</TD></TR>\n  </TABLE>\n  >, shape=\"plaintext\"];\n",
-        "N3:R -> N2;\n",
-        "N3:L -> N1;\n",
-        "N3 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N3\" COLSPAN=\"2\" BGCOLOR=\"yellow\">bit 7</TD></TR>\n    <TR><TD PORT=\"L\">0</TD><TD PORT=\"R\">1</TD></TR>\n  </TABLE>\n>, shape=\"plaintext\"];\n",
-        "N5:R -> N4;\n",
-        "N5:L -> N3;\n",
-        "N5 [label=<\n  <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n    <TR><TD PORT=\"N5\" COLSPAN=\"2\" BGCOLOR=\"orange\">bit 0</TD></TR>\n    <TR><TD PORT=\"L\">0</TD><TD PORT=\"R\">1</TD></TR>\n  </TABLE>\n>, shape=\"plaintext\"];\n",
-        "}"]
       iex> File.write("assets/example.dot", g)
       :ok
 
@@ -1165,6 +1245,94 @@ defmodule Radix do
     do: raise(arg_err(:bad_key, key))
 
   def pop(tree, _key, _opts),
+    do: raise(arg_err(:bad_tree, tree))
+
+  @doc """
+  Prunes given `tree` by invoking `fun` on adjacent or overlapping keys.
+
+  The callback `fun` is called with a single 5 or 6-element tuple:
+  - `{k0, k1, v1, k2, v2}`, two adjacent keys `k1` and `k2`, their parent `k0` is absent
+  - `{k0, v0, k1, v1, k2, v2}`, two adjacent keys `k1` and `k2` with parent `k0` and its `v0`
+
+  If `fun` returns `{:ok, value}` the children `k1` and `k2` are deleted from
+  `tree` and `value` is stored under the parent key `k0` overwriting any
+  existing value.
+
+  Optionally specify `recurse: true` to 
+  ## Examples
+
+      # prune in a singe pass
+      iex> combine = fn {_k0, _k1, v1, _k2, v2} -> {:ok, v1 + v2}
+      ...>              {_k0, v0, _k1, v1, _k2, v2} -> {:ok, v0 + v1 + v2}
+      ...>           end
+      iex> t = new()
+      ...> |> put(<<1, 1, 1, 0::1>>, 1)
+      ...> |> put(<<1, 1, 1, 1::1>>, 2)
+      ...> |> put(<<1, 1, 0>>, 3)
+      iex> prune(t, combine)
+      {0, {23, [{<<1, 1, 0>>, 3}], [{<<1, 1, 1>>, 3}]}, nil}
+
+      # recursive prune a tree
+      iex> combine = fn {_k0, _k1, v1, _k2, v2} -> {:ok, v1 + v2}
+      ...>              {_k0, v0, _k1, v1, _k2, v2} -> {:ok, v0 + v1 + v2}
+      ...>           end
+      iex> t = new()
+      ...> |> put(<<1, 1, 1, 0::1>>, 1)
+      ...> |> put(<<1, 1, 1, 1::1>>, 2)
+      ...> |> put(<<1, 1, 0>>, 3)
+      iex> prune(t, combine, recurse: true)
+      {0, [{<<1, 1, 0::size(7)>>, 6}], nil}
+
+  """
+  @spec prune(tree, (tuple -> {:ok, any} | nil), Keywords) :: tree
+  def prune(tree, fun, opts \\ [])
+
+  def prune({0, _, _} = tree, fun, opts) when is_function(fun, 1) do
+    maybe_recurse = fn acc, parent ->
+      recurse = Keyword.get(opts, :recurse, false)
+
+      # parent is nil => a new parent was created
+      case {parent, recurse} do
+        {nil, true} -> prune(acc, fun, opts)
+        _ -> acc
+      end
+    end
+
+    reducer = fn k2, v2, acc ->
+      k0 = trim(k2)
+
+      with 1 <- bit(k2, bit_size(k2) - 1),
+           {k1, v1} <- get(acc, flip(k2)),
+           parent <- get(acc, k0) do
+        v0 =
+          case parent do
+            nil -> fun.({k0, k1, v1, k2, v2})
+            {^k0, v0} -> fun.({k0, v0, k1, v1, k2, v2})
+          end
+
+        case v0 do
+          {:ok, v0} ->
+            acc
+            |> delete(k1)
+            |> delete(k2)
+            |> put(k0, v0)
+            |> maybe_recurse.(parent)
+
+          _ ->
+            acc
+        end
+      else
+        _ -> acc
+      end
+    end
+
+    reduce(tree, tree, reducer)
+  end
+
+  def prune({0, _, _} = _tree, fun, _opts),
+    do: raise(arg_err(:bad_fun, {fun, 1}))
+
+  def prune(tree, _fun, _opts),
     do: raise(arg_err(:bad_tree, tree))
 
   @doc """
