@@ -147,6 +147,10 @@ defmodule Radix do
   defp arg_err(:bad_fun, {fun, arity}),
     do: ArgumentError.exception("expected a function with arity #{arity}, got #{inspect(fun)}")
 
+  defp arg_err(:bad_callb, arg),
+    do:
+      ArgumentError.exception("unexpected callback return values, got #{inspect(arg, limit: 3)}")
+
   # bit
   # - extract the value of a bit in a key
   # - bits beyond the key-length are considered `0`
@@ -944,6 +948,97 @@ defmodule Radix do
     do: raise(arg_err(:bad_tree, tree))
 
   @doc """
+  Updates a key,value-pair in `tree` by invoking `fun` with the result of an exact match.
+
+  The callback `fun` is called with:
+  - `{key, original_value}` if an exact match was found.
+  - `nil`, in case the key is not present in `tree`, or
+
+  The function should return:
+  - `{current_value, new_value}`, or
+  - `:pop`.
+
+  When `{current_value, new_value}` is returned, the `new_value` is stored
+  under `key` and `{current_value, tree}` is returned.  When the callback
+  passes back `:pop`, the `{key, original_value}`-pair is deleted from the
+  `tree` and `{original_value, tree}` is returned.
+
+  If the callback passes back `:pop` when its argument was `nil` then `{nil, tree}`
+  is returned, where `tree` is unchanged.
+
+  Use `Pfx.update/3` if something similar is required, but based on a longest
+  prefix match instead of an exact match.
+
+  ## Examples
+
+      # update stats, get org value and store new value
+      iex> t = new([{<<1,1,1>>, 1}, {<<2, 2, 2>>, 2}])
+      iex> count = fn nil -> {0, 1}; {_key, val} -> {val, val+1} end
+      iex> {org, t} = get_and_update(t, <<1, 1, 1>>, count)
+      iex> org
+      1
+      iex> get(t, <<1, 1, 1>>)
+      {<<1, 1, 1>>, 2}
+      iex> {org, t} = get_and_update(t, <<3, 3>>, count)
+      iex> org
+      0
+      iex> get(t, <<3, 3>>)
+      {<<3, 3>>, 1}
+
+      # modify `count` callback so we get the new value back + updated treek
+      iex> t = new([{<<1,1,1>>, 1}, {<<2, 2, 2>>, 2}])
+      iex> count = fn nil -> {1, 1}; {_key, val} -> {val+1, val+1} end
+      iex> {new, t} = get_and_update(t, <<1, 1, 1>>, count)
+      iex> new
+      2
+      iex> get(t, <<1, 1, 1>>)
+      {<<1, 1, 1>>, 2}
+      iex> {new, t} = get_and_update(t, <<3, 3>>, count)
+      iex> new
+      1
+      iex> get(t, <<3, 3>>)
+      {<<3, 3>>, 1}
+
+      # returning :pop deletes the key
+      iex> t = new([{<<1, 1>>, 1}])
+      iex> once = fn nil -> {0, 1}; {_k, _v} -> :pop end
+      iex> {val, t} = get_and_update(t, <<2, 2>>, once)
+      iex> val
+      0
+      iex> get(t, <<2, 2>>)
+      {<<2, 2>>, 1}
+      iex> {val, t} = get_and_update(t, <<1, 1>>, once)
+      iex> val
+      1
+      iex> get(t, <<1, 1>>)
+      nil
+
+  """
+  @spec get_and_update(tree, key, (nil | {key, value} -> {value, value} | :pop)) :: {value, tree}
+  def get_and_update(tree, key, fun)
+
+  def get_and_update({0, _, _} = tree, key, fun) when is_bitstring(key) and is_function(fun, 1) do
+    org = get(tree, key)
+
+    case fun.(org) do
+      {cur, new} -> {cur, put(tree, key, new)}
+      :pop -> if org != nil, do: {elem(org, 1), delete(tree, key)}, else: {org, tree}
+      x -> raise(arg_err(:bad_callb, x))
+    end
+  rescue
+    err -> raise err
+  end
+
+  def get_and_update({0, _, _} = _tree, key, fun) when is_bitstring(key),
+    do: raise(arg_err(:bad_fun, {fun, 1}))
+
+  def get_and_update({0, _, _} = _tree, key, fun) when is_function(fun, 1),
+    do: raise(arg_err(:bad_key, key))
+
+  def get_and_update(tree, _key, _fun),
+    do: raise(arg_err(:bad_tree, tree))
+
+  @doc """
   Returns a list of all keys from the radix `tree`.
 
   ## Example
@@ -1561,12 +1656,20 @@ defmodule Radix do
 
   After a longest prefix match lookup for given search `key`, the callback `fun`
   is called with:
-  - `{:matched, matching_key, value}`, in case there was a match
-  - `{:nomatch, original_key}`, in case there was no match
+  - `{matched_key, value}`, in case there was a match
+  - `{original_key}`, in case there was no match
 
-  If the callback `fun` returns `{:ok, key, value}`, then _value_ will be stored
-  under _key_ in the given `tree`.  Anything else will return the `tree`
-  unchanged.
+  If the callback `fun` returns
+  -`{:ok, new_key, new_value}`, then _new_value_ will be stored under _new_key_ in the given `tree`
+  - anything else will return the `tree` unchanged.
+
+  Note that when `new_key` differs from `matched_key`, the latter is _not_
+  deleted from the tree.  Because of the longest prefix match, the
+  `matched_key` is provided to the callback `fun`.
+
+  The main use case is for when dealing with full keys and doing statistics on
+  some less specific level.  If an exact match is required,
+  `Radix.get_and_update/3` might be better suited.
 
   ## Examples
 

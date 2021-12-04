@@ -297,6 +297,93 @@ defmodule RadixTest do
     assert get(t, <<1, 1>>) == nil
   end
 
+  # Radix.get_and_update/3
+  test "get_and_update/3 validates input" do
+    count = fn
+      nil -> {0, 1}
+      {_k, v} -> {v, v + 1}
+    end
+
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> get_and_update(t, <<>>, count) end)
+    for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> get_and_update(new(), k, count) end)
+    assert_raise(RadixError, fn -> get_and_update(@broken_left_tree, <<0>>, count) end)
+    assert_raise(RadixError, fn -> get_and_update(@broken_right_tree, <<255>>, count) end)
+
+    # also checks fun has arity 1
+    bad_fun = fn
+      a, b -> {a, b}
+    end
+
+    assert_raise(ArgumentError, fn -> get_and_update(new(), <<1, 1>>, bad_fun) end)
+  end
+
+  test "get_and_update/3 when callback returns {cur, new}" do
+    count = fn
+      nil -> {0, 1}
+      {_k, v} -> {v, v + 1}
+    end
+
+    # update an empty tree
+    t = new()
+    {org, t} = get_and_update(t, <<>>, count)
+    assert get(t, <<>>) == {<<>>, 1}
+    assert org == 0
+    # update existing entry
+    {org, t} = get_and_update(t, <<1>>, count)
+    assert org == 0
+    {org, t} = get_and_update(t, <<1>>, count)
+    assert org == 1
+    {org, t} = get_and_update(t, <<1>>, count)
+    assert org == 2
+    assert get(t, <<1>>) == {<<1>>, 3}
+    # update right part of the tree
+    {org, t} = get_and_update(t, <<255, 255>>, count)
+    assert org == 0
+    assert get(t, <<255, 255>>) == {<<255, 255>>, 1}
+    # should have 3 entries
+    assert count(t) == 3
+  end
+
+  test "get_and_update/3, callback returns :pop" do
+    pop = fn
+      nil -> :pop
+      {_, _} -> :pop
+    end
+
+    t = new([{<<>>, 0}, {<<1>>, 1}, {<<255, 255>>, 255}])
+
+    {org, t} = get_and_update(t, <<128>>, pop)
+    assert org == nil
+    assert get(t, <<>>) == {<<>>, 0}
+    assert get(t, <<1>>) == {<<1>>, 1}
+    assert get(t, <<255, 255>>) == {<<255, 255>>, 255}
+    assert count(t) == 3
+
+    {org, t} = get_and_update(t, <<>>, pop)
+    assert org == 0
+    assert get(t, <<>>) == nil
+    {org, t} = get_and_update(t, <<255, 255>>, pop)
+    assert org == 255
+    assert get(t, <<255, 255>>) == nil
+    {org, t} = get_and_update(t, <<1>>, pop)
+    assert org == 1
+    assert get(t, <<1>>) == nil
+    assert count(t) == 0
+  end
+
+  test "get_and_update/3, callback returns bad value" do
+    badfun = fn
+      nil -> nil
+      {k, v} -> [k, v]
+    end
+
+    # badfun passes back nil
+    assert_raise(ArgumentError, fn -> get_and_update(new(), <<>>, badfun) end)
+
+    # badfun passes back a list
+    assert_raise(ArgumentError, fn -> get_and_update(new([{<<>>, 0}]), <<>>, badfun) end)
+  end
+
   # Radix.keys/1
   test "keys/1 validates input" do
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> keys(t) end)
