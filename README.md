@@ -14,7 +14,7 @@ A bitwise radix tree for prefix based matching on bitstring keys of any length.
 `Radix` provides a [radix tree](https://en.wikipedia.org/wiki/Radix_tree) whose
 radius is 2, has path-compression and no one-way branching.  Entries consist of
 {key, value}-pairs whose insertion/deletion is always based on an exact
-key-match. Retrieval can be either exact or is based on a longest prefix match.
+key-match. Retrieval can be either exact or based on a longest prefix match.
 
 
 ## Example
@@ -124,7 +124,7 @@ list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:radix, "~> 0.3.0"}
+    {:radix, "~> 0.4.0"}
   ]
 end
 ```

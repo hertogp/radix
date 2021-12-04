@@ -813,7 +813,9 @@ defmodule Radix do
       iex> File.write("assets/example.dot", g)
       :ok
 
-   which, after converting with `dot`, yields the following image:
+   which, after converting with
+   [dot](https://graphviz.org/doc/info/command.html), yields the following
+   image:
 
    ![example](assets/example.dot.png)
 
@@ -951,10 +953,10 @@ defmodule Radix do
   Updates a key,value-pair in `tree` by invoking `fun` with the result of an exact match.
 
   The callback `fun` is called with:
-  - `{key, original_value}` if an exact match was found.
-  - `nil`, in case the key is not present in `tree`, or
+  - `{key, original_value}` if an exact match was found, or
+  - `nil`, in case the key is not present in `tree`
 
-  The function should return:
+  The callback function should return:
   - `{current_value, new_value}`, or
   - `:pop`.
 
@@ -966,14 +968,14 @@ defmodule Radix do
   If the callback passes back `:pop` when its argument was `nil` then `{nil, tree}`
   is returned, where `tree` is unchanged.
 
-  Use `Pfx.update/3` if something similar is required, but based on a longest
-  prefix match instead of an exact match.
+  If something similar is required, but based on a longest prefix match, perhaps
+  `Radix.update/3` or `Radix.update/4` is better suited.
 
   ## Examples
 
       # update stats, get org value and store new value
-      iex> t = new([{<<1,1,1>>, 1}, {<<2, 2, 2>>, 2}])
       iex> count = fn nil -> {0, 1}; {_key, val} -> {val, val+1} end
+      iex> t = new([{<<1,1,1>>, 1}, {<<2, 2, 2>>, 2}])
       iex> {org, t} = get_and_update(t, <<1, 1, 1>>, count)
       iex> org
       1
@@ -985,9 +987,9 @@ defmodule Radix do
       iex> get(t, <<3, 3>>)
       {<<3, 3>>, 1}
 
-      # modify `count` callback so we get the new value back + updated treek
-      iex> t = new([{<<1,1,1>>, 1}, {<<2, 2, 2>>, 2}])
+      # modify `count` callback so we get the new value back + updated tree
       iex> count = fn nil -> {1, 1}; {_key, val} -> {val+1, val+1} end
+      iex> t = new([{<<1,1,1>>, 1}, {<<2, 2, 2>>, 2}])
       iex> {new, t} = get_and_update(t, <<1, 1, 1>>, count)
       iex> new
       2
@@ -1000,8 +1002,8 @@ defmodule Radix do
       {<<3, 3>>, 1}
 
       # returning :pop deletes the key
-      iex> t = new([{<<1, 1>>, 1}])
       iex> once = fn nil -> {0, 1}; {_k, _v} -> :pop end
+      iex> t = new([{<<1, 1>>, 1}])
       iex> {val, t} = get_and_update(t, <<2, 2>>, once)
       iex> val
       0
@@ -1069,9 +1071,12 @@ defmodule Radix do
   Returns all key,value-pairs whose key is a prefix for the given search `key`.
 
   Collects key,value-pairs where the stored key is the same or less specific.
+  Optionally exclude the search key from the results by providing option
+  `:exclude` as true.
 
   ## Example
 
+      # include search for less specifics
       iex> elements = [
       ...>  {<<1, 1>>, 16},
       ...>  {<<1, 1, 0>>, 24},
@@ -1085,19 +1090,36 @@ defmodule Radix do
       [{<<1, 1, 0>>, 24}, {<<1, 1>>, 16}]
       iex> less(t, <<2, 2>>)
       []
+      #
+      # exclusive search for less specifics
+      #
+      iex> less(t, <<1, 1, 0, 0>>, exclude: true)
+      [{<<1, 1, 0>>, 24}, {<<1, 1>>, 16}]
+      # 
+      # search key itself does not have to exist in the tree
+      iex> less(t, <<1, 1, 0, 25>>)
+      [{<<1, 1, 0>>, 24}, {<<1, 1>>, 16}]
+
 
   """
-  @spec less(tree, key) :: [{key, value}]
-  def less({0, _, _} = tree, key) when is_bitstring(key) do
-    lessp(tree, key)
+  @spec less(tree, key, Keyword.t()) :: [{key, value}]
+  def less(tree, key, opts \\ [])
+
+  def less({0, _, _} = tree, key, opts) when is_bitstring(key) do
+    result = lessp(tree, key)
+
+    case Keyword.get(opts, :exclude, false) do
+      true -> Enum.filter(result, fn {k, _v} -> k != key end)
+      _ -> result
+    end
   rescue
     err -> raise err
   end
 
-  def less({0, _, _} = _tree, key),
+  def less({0, _, _} = _tree, key, _opts),
     do: raise(arg_err(:bad_key, key))
 
-  def less(tree, _key),
+  def less(tree, _key, _opts),
     do: raise(arg_err(:bad_tree, tree))
 
   @doc """
@@ -1219,19 +1241,38 @@ defmodule Radix do
       [{<<1, 1, 1, 1>>, 32}]
       iex> more(t, <<2>>)
       []
+      #
+      # exclusive search for more specifics
+      #
+      iex> more(t, <<1, 1, 0>>, exclude: true)
+      [{<<1, 1, 0, 0>>, 32}]
+      #
+      # search key itself does not have to exist
+      #
+      iex> more(t, <<1>>)
+      [{<<1, 1, 1, 1>>, 32}, {<<1, 1, 0, 0>>, 32}, {<<1, 1, 0>>, 24}, {<<1, 1>>, 16}]
+
+
 
   """
-  @spec more(tree, key) :: [{key, value}]
-  def more({0, _, _} = tree, key) when is_bitstring(key) do
-    morep(tree, key)
+  @spec more(tree, key, Keyword.t()) :: [{key, value}]
+  def more(tree, key, opts \\ [])
+
+  def more({0, _, _} = tree, key, opts) when is_bitstring(key) do
+    result = morep(tree, key)
+
+    case Keyword.get(opts, :exclude, false) do
+      true -> Enum.filter(result, fn {k, _v} -> k != key end)
+      _ -> result
+    end
   rescue
     err -> raise err
   end
 
-  def more({0, _, _} = _tree, key),
+  def more({0, _, _} = _tree, key, _opts),
     do: raise(arg_err(:bad_key, key))
 
-  def more(tree, _key),
+  def more(tree, _key, _opts),
     do: raise(arg_err(:bad_tree, tree))
 
   @doc """
@@ -1660,7 +1701,7 @@ defmodule Radix do
   - `{original_key}`, in case there was no match
 
   If the callback `fun` returns
-  -`{:ok, new_key, new_value}`, then _new_value_ will be stored under _new_key_ in the given `tree`
+  - `{:ok, new_key, new_value}`, then _new_value_ will be stored under _new_key_ in the given `tree`
   - anything else will return the `tree` unchanged.
 
   Note that when `new_key` differs from `matched_key`, the latter is _not_
@@ -1669,7 +1710,7 @@ defmodule Radix do
 
   The main use case is for when dealing with full keys and doing statistics on
   some less specific level.  If an exact match is required,
-  `Radix.get_and_update/3` might be better suited.
+  `Radix.get_and_update/3` might be a better fit.
 
   ## Examples
 
@@ -1726,10 +1767,10 @@ defmodule Radix do
   Looks up the longest prefix match for given search `key` in `tree` and
   updates its value through `fun`.
 
-  If `key` has a longest prefix match in `tree` then its value is passed to
-  `fun` and its result is used as the updated value of the *matching* key. If
-  `key` cannot be matched the {`key`, `default`}-pair is inserted in
-  the `tree`.
+  If `key` has a longest prefix match in `tree` then the associated value is
+  passed to `fun` and its result is used as the updated value of the *matching*
+  key. If `key` cannot be matched the {`key`, `default`}-pair is inserted in
+  the `tree` without calling `fun`.
 
   ## Example
 

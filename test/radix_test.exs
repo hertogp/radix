@@ -424,14 +424,14 @@ defmodule RadixTest do
   end
 
   # Radix.less/2
-  test "less/2 validates input" do
+  test "less/3 validates input" do
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> less(t, <<>>) end)
     for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> less(new(), k) end)
     assert_raise(RadixError, fn -> less(@broken_left_tree, <<0>>) end)
     assert_raise(RadixError, fn -> less(@broken_right_tree, <<255>>) end)
   end
 
-  test "less/2 - less specifics" do
+  test "less/3 - less specifics" do
     t =
       new()
       |> put(<<255>>, 8)
@@ -446,6 +446,13 @@ defmodule RadixTest do
     assert {<<255, 255, 1::1>>, 17} in less
     assert {<<255, 255, 3::2>>, 18} in less
 
+    less = less(t, <<255, 255, 255, 255>>, exclude: true)
+    assert Enum.count(less) == 4
+    assert {<<255>>, 8} in less
+    assert {<<255, 255>>, 16} in less
+    assert {<<255, 255, 1::1>>, 17} in less
+    assert {<<255, 255, 3::2>>, 18} in less
+
     less = less(t, <<255, 255, 3::2>>)
     assert Enum.count(less) == 4
     assert {<<255>>, 8} in less
@@ -453,20 +460,38 @@ defmodule RadixTest do
     assert {<<255, 255, 1::1>>, 17} in less
     assert {<<255, 255, 3::2>>, 18} in less
 
+    less = less(t, <<255, 255, 3::2>>, exclude: true)
+    assert Enum.count(less) == 3
+    assert {<<255>>, 8} in less
+    assert {<<255, 255>>, 16} in less
+    assert {<<255, 255, 1::1>>, 17} in less
+
     less = less(t, <<255, 255, 1::1>>)
     assert Enum.count(less) == 3
     assert {<<255>>, 8} in less
     assert {<<255, 255>>, 16} in less
     assert {<<255, 255, 1::1>>, 17} in less
 
+    less = less(t, <<255, 255, 1::1>>, exclude: true)
+    assert Enum.count(less) == 2
+    assert {<<255>>, 8} in less
+    assert {<<255, 255>>, 16} in less
+
     less = less(t, <<255, 255>>)
     assert Enum.count(less) == 2
     assert {<<255>>, 8} in less
     assert {<<255, 255>>, 16} in less
 
+    less = less(t, <<255, 255>>, exclude: true)
+    assert Enum.count(less) == 1
+    assert {<<255>>, 8} in less
+
     less = less(t, <<255>>)
     assert Enum.count(less) == 1
     assert {<<255>>, 8} in less
+
+    less = less(t, <<255>>, exclude: true)
+    assert Enum.count(less) == 0
 
     # keys without less specifics
     assert less(t, <<>>) == []
@@ -670,9 +695,22 @@ defmodule RadixTest do
     assert {<<255, 255, 1::1>>, 17} in more
     assert {<<255, 255, 3::2>>, 18} in more
 
+    more = more(t, <<>>, exclude: true)
+    assert Enum.count(more) == 4
+    assert {<<255>>, 8} in more
+    assert {<<255, 255>>, 16} in more
+    assert {<<255, 255, 1::1>>, 17} in more
+    assert {<<255, 255, 3::2>>, 18} in more
+
     more = more(t, <<255>>)
     assert Enum.count(more) == 4
     assert {<<255>>, 8} in more
+    assert {<<255, 255>>, 16} in more
+    assert {<<255, 255, 1::1>>, 17} in more
+    assert {<<255, 255, 3::2>>, 18} in more
+
+    more = more(t, <<255>>, exclude: true)
+    assert Enum.count(more) == 3
     assert {<<255, 255>>, 16} in more
     assert {<<255, 255, 1::1>>, 17} in more
     assert {<<255, 255, 3::2>>, 18} in more
@@ -683,7 +721,18 @@ defmodule RadixTest do
     assert {<<255, 255, 1::1>>, 17} in more
     assert {<<255, 255, 3::2>>, 18} in more
 
+    more = more(t, <<255, 255>>, exclude: true)
+    assert Enum.count(more) == 2
+    assert {<<255, 255, 1::1>>, 17} in more
+    assert {<<255, 255, 3::2>>, 18} in more
+
     more = more(t, <<255, 1::1>>)
+    assert Enum.count(more) == 3
+    assert {<<255, 255>>, 16} in more
+    assert {<<255, 255, 1::1>>, 17} in more
+    assert {<<255, 255, 3::2>>, 18} in more
+
+    more = more(t, <<255, 1::1>>, exclude: true)
     assert Enum.count(more) == 3
     assert {<<255, 255>>, 16} in more
     assert {<<255, 255, 1::1>>, 17} in more
@@ -695,14 +744,27 @@ defmodule RadixTest do
     assert {<<255, 255, 1::1>>, 17} in more
     assert {<<255, 255, 3::2>>, 18} in more
 
+    more = more(t, <<255, 255::7>>, exclude: true)
+    assert Enum.count(more) == 3
+    assert {<<255, 255>>, 16} in more
+    assert {<<255, 255, 1::1>>, 17} in more
+    assert {<<255, 255, 3::2>>, 18} in more
+
     more = more(t, <<255, 255, 1::1>>)
     assert Enum.count(more) == 2
     assert {<<255, 255, 1::1>>, 17} in more
     assert {<<255, 255, 3::2>>, 18} in more
 
+    more = more(t, <<255, 255, 1::1>>, exclude: true)
+    assert Enum.count(more) == 1
+    assert {<<255, 255, 3::2>>, 18} in more
+
     more = more(t, <<255, 255, 3::2>>)
     assert Enum.count(more) == 1
     assert {<<255, 255, 3::2>>, 18} in more
+
+    more = more(t, <<255, 255, 3::2>>, exclude: true)
+    assert Enum.count(more) == 0
 
     # keys without more specifics
     assert more(t, <<254>>) == []
