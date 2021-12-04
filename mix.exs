@@ -2,10 +2,12 @@ defmodule Radix.MixProject do
   use Mix.Project
 
   # Before publishing to Hex:
+  # - ensure right version tag in mix.exs, README.md and CHANGELOG.md
+  # - git uptodate
+  # - ci is ok
   # - mix test
   # - mix docz
   # - mix dialyzer
-  # - ensure right version tag in mix.exs, README.md and CHANGELOG.md
   # - git tag -a vx.y.z -m 'Release vx.y.z'
   # - git push --tags
   # mix hex.publish
