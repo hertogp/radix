@@ -152,36 +152,31 @@ end
 defmodule Alt4 do
   # create key as integer
 
-  def make_key(k) do
-    key =
-      case 8 - rem(bit_size(k), 8) do
-        8 -> k
-        n -> <<k::bits, 0::size(n)>>
-      end
-
-    :binary.decode_unsigned(key)
-  end
-
-  def bit(num, pos, max) when pos < max do
-    :erlang.band(num, :erlang.bsl(1, max - pos - 1)) != 0
-  end
-
-  def bit(_, _, _),
-    do: 0
+  @compile {:inline, bit: 3}
+  defp bit(key, pos, max),
+    do: :erlang.band(key, :erlang.bsl(1, max - pos - 1))
 
   # root/internal node is {b,l,r}
   # leaf is nil or [{k,v}, _]
   def leaf({bit, l, r}, key, max) do
-    case(bit(key, bit, max)) do
-      false -> leaf(l, key, max)
-      true -> leaf(r, key, max)
-    end
+    # check value at position `bit`
+    if bit(key, bit, max) == 0,
+      do: leaf(l, key, max),
+      else: leaf(r, key, max)
   end
 
   def leaf(leaf, _key, _max), do: leaf
 
   def get({0, _, _} = tree, key, default \\ nil) do
-    case leaf(tree, make_key(key), :erlang.bit_size(key)) do
+    # convert key to integer, pads with 0-bits to multiple of 8
+    key_int =
+      case 8 - rem(bit_size(key), 8) do
+        8 -> key
+        n -> <<key::bits, 0::size(n)>>
+      end
+      |> :binary.decode_unsigned()
+
+    case leaf(tree, key_int, :erlang.bit_size(key)) do
       nil -> default
       leaf -> :lists.keyfind(key, 1, leaf) || default
     end
