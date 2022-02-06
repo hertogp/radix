@@ -18,24 +18,40 @@ alias Radix
 # Altx.make_key/1 creates the search key, then
 # Altx.bit/3 gets the key, pos and max num of bits
 
-# Name             ips        average  deviation         median         99th %
-# k2_tuple     44.84 M       22.30 ns   ±583.23%          18 ns          89 ns
-# k3_int       37.76 M       26.49 ns  ±3774.27%          21 ns         115 ns
-# k1_bits       7.73 M      129.30 ns ±40581.14%          44 ns         163 ns
-# k4_bin        3.81 M      262.63 ns ±21318.94%         139 ns         381 ns
+# IPv4 type bitstrings
+# the_bits: <<192, 43, 192, 43>>
+# k1_bits_: [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0]
+# k2_tuple: [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0]
+# k3_int__: [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0]
+# k4_int__: [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0]
 
-# Comparison:
-# k2_tuple     44.84 M
-# k3_int       37.76 M - 1.19x slower +4.18 ns
-# k1_bits       7.73 M - 5.80x slower +107.00 ns
-# k4_bin        3.81 M - 11.78x slower +240.33 ns
+# Name               ips        average  deviation         median         99th %
+# k3_int        402.56 K        2.48 μs   ±901.59%        2.20 μs        4.32 μs
+# k4_int        401.28 K        2.49 μs   ±944.59%        2.22 μs        4.85 μs
+# k1_bits       344.60 K        2.90 μs  ±1203.98%        2.50 μs        6.34 μs
+# k2_tuple      317.60 K        3.15 μs   ±946.37%        2.82 μs        5.69 μs
+
+# Comparison: 
+# k3_int        402.56 K
+# k4_int        401.28 K - 1.00x slower +0.00792 μs
+# k1_bits       344.60 K - 1.17x slower +0.42 μs
+# k2_tuple      317.60 K - 1.27x slower +0.66 μs
+
+# IPv6 type bitstrings
+# Name               ips        average  deviation         median         99th %
+# k1_bits       102.13 K        9.79 μs   ±190.78%        9.23 μs       22.07 μs
+# k2_tuple       89.30 K       11.20 μs    ±72.84%       10.56 μs       21.18 μs
+# k4_int         57.20 K       17.48 μs    ±41.97%       16.60 μs       37.77 μs
+# k3_int         55.09 K       18.15 μs    ±90.91%       17.47 μs       34.47 μs
+
+# Comparison: 
+# k1_bits       102.13 K
+# k2_tuple       89.30 K - 1.14x slower +1.41 μs
+# k4_int         57.20 K - 1.79x slower +7.69 μs
+# k3_int         55.09 K - 1.85x slower +8.36 μs
 
 defmodule Alt1 do
   # bitstring
-
-  def make_key(key),
-    do: key
-
   def bit(key, pos, max) do
     # key is a bitstring
     if pos < max do
@@ -44,6 +60,12 @@ defmodule Alt1 do
     else
       0
     end
+  end
+
+  def test(key) do
+    # no convert key
+    max = bit_size(key)
+    for pos <- 0..max, do: bit(key, pos, max)
   end
 end
 
@@ -60,6 +82,12 @@ defmodule Alt2 do
       do: elem(key, pos),
       else: 0
   end
+
+  def test(key) do
+    max = bit_size(key)
+    key = make_key(key)
+    for pos <- 0..max, do: bit(key, pos, max)
+  end
 end
 
 defmodule Alt3 do
@@ -73,63 +101,52 @@ defmodule Alt3 do
 
   def bit(key, pos, max) do
     # key is integer
-    if pos < max do
-      case :erlang.band(key, :erlang.bsl(1, max - pos - 1)) == 0 do
-        false -> 1
-        _ -> 0
-      end
-    else
-      0
-    end
+    if :erlang.band(key, :erlang.bsl(1, max - pos - 1)) == 0,
+      do: 0,
+      else: 1
+  end
+
+  def test(key) do
+    max = bit_size(key)
+    key = make_key(key)
+    for pos <- 0..max, do: bit(key, pos, max)
   end
 end
 
 defmodule Alt4 do
-  # erlang binary part
+  # integer
 
-  def make_key(key),
-    do: key
+  def make_key(key) do
+    nbits = bit_size(key)
+    <<num::size(nbits)>> = key
+    num
+  end
 
   def bit(key, pos, max) do
-    if pos < max do
-      <<byte>> = :binary.part(key, {div(pos, 8), 1})
+    # key is integer
+    :erlang.band(1, :erlang.bsr(key, max - pos - 1))
+  end
 
-      case rem(pos, 8) do
-        0 -> :erlang.band(byte, 0x80)
-        1 -> :erlang.band(byte, 0x40)
-        2 -> :erlang.band(byte, 0x20)
-        3 -> :erlang.band(byte, 0x10)
-        4 -> :erlang.band(byte, 0x08)
-        5 -> :erlang.band(byte, 0x04)
-        6 -> :erlang.band(byte, 0x02)
-        7 -> :erlang.band(byte, 0x01)
-        _ -> raise "Oopsie"
-      end
-    else
-      0
-    end
+  def test(key) do
+    max = bit_size(key)
+    key = make_key(key)
+    for pos <- 0..max, do: bit(key, pos, max)
   end
 end
 
 x = :rand.uniform(255)
 y = :rand.uniform(255)
-k_bits = <<x, y>>
-k2_key = Alt2.make_key(k_bits)
-k3_key = Alt3.make_key(k_bits)
+key = <<x, y, x, y, x, y, x, y, x, y, x, y, x, y, x, y>>
 
-IO.inspect(Alt1.bit(k_bits, 15, 16), label: :k1_bits)
-IO.inspect(Alt2.bit(k2_key, 15, 16), label: :k2_tuple)
-IO.inspect(Alt3.bit(k3_key, 15, 16), label: :k3_int)
-IO.inspect(Alt4.bit(k_bits, 15, 16), label: :k4_binary)
-
-Benchee.run(%{
-  "k1_bits " => fn -> Alt1.bit(k_bits, 15, 16) end,
-  "k2_tuple" => fn -> Alt2.bit(k2_key, 15, 16) end,
-  "k3_int  " => fn -> Alt3.bit(k3_key, 15, 16) end,
-  "k4_bin  " => fn -> Alt4.bit(k_bits, 15, 16) end
-})
+IO.inspect(key, label: :the_bits)
+IO.inspect(Alt1.test(key), label: :k1_bits_)
+IO.inspect(Alt2.test(key), label: :k2_tuple)
+IO.inspect(Alt3.test(key), label: :k3_int__)
+IO.inspect(Alt4.test(key), label: :k4_int__)
 
 Benchee.run(%{
-  "k2_tuple_key" => fn -> Alt2.make_key(k_bits) end,
-  "k3_int_key  " => fn -> Alt3.make_key(k_bits) end
+  "k1_bits " => fn -> Alt1.test(key) end,
+  "k2_tuple" => fn -> Alt2.test(key) end,
+  "k3_int  " => fn -> Alt3.test(key) end,
+  "k4_int " => fn -> Alt4.test(key) end
 })

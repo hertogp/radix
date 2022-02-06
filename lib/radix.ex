@@ -66,7 +66,8 @@ defmodule Radix do
 
   During tree traversals, bit positions in the key are checked in order
   to decide whether to go left (0) or right (1).  During these checks, bits
-  beyond the current key's length always evaluate to 0.
+  beyond the current key's length always evaluate to 0.  Bit positions are
+  zero-indexed, with bit `0` being the most significant bit.
 
   """
   @type key :: bitstring()
