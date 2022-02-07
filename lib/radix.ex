@@ -208,6 +208,8 @@ defmodule Radix do
     do: <<>>
 
   defp flip(key) do
+    # returns the neighboring key by flipping the last bit
+    # used by prune/3
     pos = bit_size(key) - 1
     <<bits::bitstring-size(pos), bit::1>> = key
 
@@ -850,7 +852,7 @@ defmodule Radix do
     do: tree == @empty
 
   def empty?(tree),
-    do: raise(error(:badtree, tree))
+    do: raise(arg_err(:bad_tree, tree))
 
   @doc """
   Fetches the key,value-pair for a `key` in the given `tree`.
@@ -1430,6 +1432,7 @@ defmodule Radix do
 
   @spec prunep(tree, (key, value, acc -> acc)) :: tree
   defp prunep(tree, fun) do
+    # keep pruning if tree was changed
     case reduce(tree, tree, fun) do
       ^tree -> tree
       changed -> prunep(changed, fun)

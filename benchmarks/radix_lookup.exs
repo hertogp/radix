@@ -1,20 +1,28 @@
 alias Radix
 
-# Fastest way to get (exactly) a key,value-pair from a radix tree
+# Fastest way to lookup (lpm) a key,value-pair in a radix tree
 # - tree is densly populated
-# - all bits of the key need to be checked
+# - almost all bits of the key need to be checked
+# - each leaf has a list of 7 prefixes
 
 # % mix run benchmarks/radix_lookup.exs
-#
 
-keyvalues = for x <- 0..255, y <- 0..255, do: {<<x, y>>, <<x, y>>}
+# alt0_lookup: {<<114, 185>>, 0}
+# alt1_lookup: {<<114, 185>>, 0}
+# radix_lookup: {<<114, 185>>, 0}
 
-rdx = Radix.new(keyvalues)
+# Name                  ips        average  deviation         median         99th %
+# rdx_lookup         5.75 M      173.80 ns ±24699.32%           0 ns        1351 ns
+# alt0_lookup        5.29 M      188.97 ns ±35626.67%           0 ns        1247 ns
+# alt1_lookup        2.48 M      403.34 ns ±11705.40%         193 ns        1563 ns
+
+# Comparison:
+# rdx_lookup         5.75 M
+# alt0_lookup        5.29 M - 1.09x slower +15.17 ns
+# alt1_lookup        2.48 M - 2.32x slower +229.54 ns
 
 defmodule Alt0 do
   # use own recursive func to find first matching prefix
-
-  defp first_prefix([], _key, _kmax), do: nil
 
   defp first_prefix([{k, _v} | tail], key, kmax) when bit_size(k) > kmax,
     do: first_prefix(tail, key, kmax)
@@ -23,11 +31,12 @@ defmodule Alt0 do
     len = bit_size(k)
     <<key::bitstring-size(len), _::bitstring>> = key
 
-    case k == key do
-      true -> {k, v}
-      false -> first_prefix(tail, key, kmax)
-    end
+    if k == key,
+      do: {k, v},
+      else: first_prefix(tail, key, kmax)
   end
+
+  defp first_prefix([], _key, _kmax), do: nil
 
   def lookup({0, _, _} = tree, key) when is_bitstring(key),
     do: lpm(tree, key, :erlang.bit_size(key))
@@ -36,14 +45,8 @@ defmodule Alt0 do
     <<_::size(b), bit::1, _::bitstring>> = key
 
     case bit do
-      0 ->
-        lpm(l, key, max)
-
-      1 ->
-        case lpm(r, key, max) do
-          nil -> lpm(l, key, max)
-          x -> x
-        end
+      0 -> lpm(l, key, max)
+      1 -> lpm(r, key, max) || lpm(l, key, max)
     end
   end
 
@@ -53,10 +56,9 @@ defmodule Alt0 do
   defp lpm(nil, _key, _max),
     do: nil
 
-  defp lpm(leaf, key, max),
-    do: first_prefix(leaf, key, max)
-
-  # do: Enum.find(leaf, fn {k, _} -> is_prefix?(k, key) end)
+  defp lpm(leaf, key, max) do
+    first_prefix(leaf, key, max)
+  end
 end
 
 defmodule Alt1 do
@@ -76,14 +78,8 @@ defmodule Alt1 do
     <<_::size(b), bit::1, _::bitstring>> = key
 
     case bit do
-      0 ->
-        lpm(l, key, max)
-
-      1 ->
-        case lpm(r, key, max) do
-          nil -> lpm(l, key, max)
-          x -> x
-        end
+      0 -> lpm(l, key, max)
+      1 -> lpm(r, key, max) || lpm(l, key, max)
     end
   end
 
@@ -97,18 +93,32 @@ defmodule Alt1 do
     do: Enum.find(leaf, fn {k, _} -> is_prefix?(k, key) end)
 end
 
-x = :rand.uniform(255)
-y = :rand.uniform(255)
-IO.inspect(Alt0.lookup(rdx, <<x, y, x>>), label: :alt0_lookup)
-IO.inspect(Alt1.lookup(rdx, <<x, y, x>>), label: :alt1_lookup)
-IO.inspect(Radix.lookup(rdx, <<x, y, x>>), label: :radix_lookup)
+keyvalues =
+  for a <- 0..255,
+      b <- 0..255,
+      do: [
+        {<<a, b>>, 0},
+        {<<a, b, 0::1>>, 1},
+        {<<a, b, 0::2>>, 2},
+        {<<a, b, 0::3>>, 3},
+        {<<a, b, 0::4>>, 4},
+        {<<a, b, 0::5>>, 5},
+        {<<a, b, 0::6>>, 6}
+      ]
 
-IO.inspect(Alt0.lookup(rdx, <<>>), label: :alt0_lookup)
-IO.inspect(Alt1.lookup(rdx, <<>>), label: :alt1_lookup)
-IO.inspect(Radix.lookup(rdx, <<>>), label: :radix_lookup)
+keyvalues = List.flatten(keyvalues)
+
+x = :random.uniform(255)
+y = :random.uniform(255)
+key = <<x, y>>
+
+rdx = Radix.new(keyvalues)
+IO.inspect(Alt0.lookup(rdx, key), label: :alt0_lookup)
+IO.inspect(Alt1.lookup(rdx, key), label: :alt1_lookup)
+IO.inspect(Radix.lookup(rdx, key), label: :radix_lookup)
 
 Benchee.run(%{
-  "rdx_lookup" => fn -> Radix.lookup(rdx, <<x, y>>) end,
-  "alt0_lookup" => fn -> Alt0.lookup(rdx, <<x, y>>) end,
-  "alt1_lookup" => fn -> Alt1.lookup(rdx, <<x, y>>) end
+  "rdx_lookup" => fn -> Radix.lookup(rdx, key) end,
+  "alt0_lookup" => fn -> Alt0.lookup(rdx, key) end,
+  "alt1_lookup" => fn -> Alt1.lookup(rdx, key) end
 })

@@ -83,6 +83,9 @@ defmodule RadixTest do
       |> put(<<0, 0, 0>>, "0.0.0/24")
       |> put(<<>>, "empty")
 
+    # delete non-existing key does not change tree
+    assert delete(t, <<1, 1>>) == t
+
     t = delete(t, <<0, 0>>)
     assert get(t, <<0>>) == {<<0>>, "0/8"}
     assert get(t, <<0, 0>>) == nil
@@ -103,6 +106,11 @@ defmodule RadixTest do
 
     t = delete(t, <<0, 0, 0>>)
     assert t == {0, nil, nil}
+    assert t == delete(t, <<0>>)
+
+    t = new() |> put(<<0>>, "0") |> put(<<1>>, "1")
+    t = delete(t, <<1>>)
+    assert {0, nil, nil} == delete(t, <<0>>)
   end
 
   # Radix.dot/2
@@ -110,14 +118,27 @@ defmodule RadixTest do
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> dot(t) end)
     assert_raise(RadixError, fn -> dot(@broken_left_tree) end)
     assert_raise(RadixError, fn -> dot(@broken_right_tree) end)
+
+    # dot handles emtpy tree
+    g = new() |> dot()
+    assert length(g) > 0
+
+    # dot handles empty bitstring
+    t = new([{<<>>, 0}])
+    g = dot(t)
+    assert length(g) > 0
   end
 
   # Radix.drop/2
   test "drop2 validates input" do
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> drop(t, [<<0>>]) end)
     for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> drop(new(), [k]) end)
-    assert_raise(RadixError, fn -> drop(@broken_left_tree, [<<0>>]) end)
-    assert_raise(RadixError, fn -> drop(@broken_right_tree, [<<255>>]) end)
+
+    assert_raise RadixError, fn -> drop(@broken_left_tree, [<<0>>]) end
+    assert_raise RadixError, fn -> drop(@broken_right_tree, [<<255>>]) end
+
+    # raises if keys is not list of keys
+    assert_raise ArgumentError, fn -> new() |> drop(:invalid_key) end
   end
 
   test "drop/2 ignores non-existing keys" do
@@ -152,6 +173,9 @@ defmodule RadixTest do
 
     t = new() |> put(<<>>, nil)
     assert false == empty?(t)
+
+    # raises if given bad trees
+    for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> empty?(t) end)
   end
 
   # Radix.fetch/3
@@ -197,6 +221,7 @@ defmodule RadixTest do
     # no match unless lpm
     assert fetch(t, <<7>>) == :error
     assert fetch(t, <<7>>, match: :lpm) == {:ok, {<<>>, nil}}
+    assert fetch(t, <<7>>, match: :longest) == {:ok, {<<>>, nil}}
   end
 
   # Radix.fetch!/3
@@ -866,6 +891,22 @@ defmodule RadixTest do
     assert count(t1) == 1
     assert t1 == {0, [{"", 32640}], nil}
     assert Enum.sum(0..255) == get(t1, <<>>) |> elem(1)
+
+    # prune until empty
+    f = fn
+      {_k0, _k1, v1, _k2, v2} -> {:ok, v1 + v2}
+      {_k0, v0, _k1, v1, _k2, v2} -> {:ok, v0 + v1 + v2}
+    end
+
+    t = new([{<<0::1>>, 0}, {<<1::1>>, 1}])
+    t1 = prune(t, f, recurse: true)
+    assert t1 == {0, [{"", 1}], nil}
+
+    t = new([{<<1::1>>, 1}])
+    assert t == prune(t, fn _ -> false end)
+
+    t = new([{<<0::1>>, 1}])
+    assert t == prune(t, fn _ -> false end)
   end
 
   # Radix.put/2
