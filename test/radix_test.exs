@@ -807,6 +807,7 @@ defmodule RadixTest do
   test "new/1 validates input" do
     # second key is bad
     assert_raise ArgumentError, fn -> new([{<<0>>, 0}, {42, 42}]) end
+    assert_raise ArgumentError, fn -> new(21) end
   end
 
   test "new, radix tree initialized with list of {k,v}-pairs" do
@@ -898,11 +899,11 @@ defmodule RadixTest do
       {_k0, v0, _k1, v1, _k2, v2} -> {:ok, v0 + v1 + v2}
     end
 
-    t = new([{<<0::1>>, 0}, {<<1::1>>, 1}])
+    t = new([{<<>>, 0}, {<<0::1>>, 1}, {<<1::1>>, 2}])
     t1 = prune(t, f, recurse: true)
-    assert t1 == {0, [{"", 1}], nil}
+    assert t1 == {0, [{"", 3}], nil}
 
-    t = new([{<<1::1>>, 1}])
+    t = new([{<<>>, 0}, {<<0::1>>, 1}, {<<1::1>>, 2}])
     assert t == prune(t, fn _ -> false end)
 
     t = new([{<<0::1>>, 1}])
@@ -915,6 +916,9 @@ defmodule RadixTest do
     for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> put(new(), [{<<>>, 0}, {k, 0}]) end)
     assert_raise(RadixError, fn -> put(@broken_left_tree, [{<<0>>, 0}]) end)
     assert_raise(RadixError, fn -> put(@broken_right_tree, [{<<255>>, 0}]) end)
+
+    # validate key,values
+    assert_raise ArgumentError, fn -> new() |> put(42) end
   end
 
   test "put/2 a list of {k,v}-pairs" do
@@ -1019,6 +1023,10 @@ defmodule RadixTest do
     for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> split(new(), [k]) end)
     assert_raise(RadixError, fn -> split(@broken_left_tree, [<<0>>]) end)
     assert_raise(RadixError, fn -> split(@broken_right_tree, [<<0>>, <<255>>]) end)
+
+    # raises on bad keyvals
+    assert_raise ArgumentError, fn -> new() |> split(42) end
+    assert_raise ArgumentError, fn -> new() |> split([42]) end
   end
 
   test "split/3 splits a radix tree into two trees" do
@@ -1072,6 +1080,10 @@ defmodule RadixTest do
     for k <- @bad_keys, do: assert_raise(ArgumentError, fn -> take(new(), [k]) end)
     assert_raise(RadixError, fn -> take(@broken_left_tree, [<<0>>]) end)
     assert_raise(RadixError, fn -> take(@broken_right_tree, [<<255>>]) end)
+
+    # raises on bad keyvals
+    assert_raise ArgumentError, fn -> new() |> take(42) end
+    assert_raise ArgumentError, fn -> new() |> take([42]) end
   end
 
   test "take/3 returns a new tree with specified keys" do

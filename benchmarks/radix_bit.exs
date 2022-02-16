@@ -5,11 +5,14 @@ alias Radix
 # Given a search key, the radix tree must be traversed while
 # checking bit values at varying positions.  The speed at which
 # a bit value can be determined depends on the search key representation:
+#
 # Key:           Extraction:
+# --------------------------------------
 # bitstring      bitstring decomposition
 # tuple of bits  elem(x) access
 # integer        Bitwise funcs
 # bitstring      erlang's binary.part
+# --------------------------------------
 #
 # Note:
 # - tuples are limited in size to 2^24, so

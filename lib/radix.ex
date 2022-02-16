@@ -155,6 +155,7 @@ defmodule Radix do
   # bit
   # - extract the value of a bit in a key
   # - bits beyond the key-length are considered `0`
+  @compile {:inline, bit: 2}
   @spec bit(key, bitpos) :: 0 | 1
   defp bit(<<>>, _pos), do: 0
 
@@ -1442,6 +1443,7 @@ defmodule Radix do
   @spec pruner((tuple -> nil | {:ok, any})) :: (key, value, tree -> tree)
   defp pruner(fun) do
     fn k2, v2, acc ->
+      # get parent-key of k2 by dropping last bit
       k0 = trim(k2)
 
       with 1 <- bit(k2, bit_size(k2) - 1),

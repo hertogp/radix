@@ -6,17 +6,44 @@ alias Radix
 
 # % mix run benchmarks/radix_get.exs
 #
+
+# IPv4 style keys (32 bits)
+# ------------------------------------------------------------------------------
+# Name               ips        average  deviation         median         99th %
+# alt4_get        2.49 M      401.89 ns  ±1718.19%         372 ns         726 ns
+# rdx_get         1.28 M      780.05 ns  ±7618.97%         578 ns        1238 ns
+# alt0_get        1.26 M      796.32 ns  ±7394.15%         580 ns        1563 ns
+# alt1_get        1.06 M      943.18 ns  ±6013.52%         757 ns        1823 ns
+# alt3_get        0.83 M     1208.43 ns  ±2640.45%        1090 ns        2066 ns
+# alt2_get        0.70 M     1436.82 ns  ±2460.20%        1284 ns        2092 ns
+
 # Comparison: 
-# alt0_get      843.29 K
-# alt1_get      760.99 K - 1.11x slower +0.128 μs
-# alt2_get      659.42 K - 1.28x slower +0.33 μs
-# rdx_get       622.86 K - 1.35x slower +0.42 μs
-# alt4_get      605.47 K - 1.39x slower +0.47 μs
-# alt3_get      426.14 K - 1.98x slower +1.16 μs
+# alt4_get        2.49 M
+# rdx_get         1.28 M - 1.94x slower +378.16 ns
+# alt0_get        1.26 M - 1.98x slower +394.43 ns
+# alt1_get        1.06 M - 2.35x slower +541.30 ns
+# alt3_get        0.83 M - 3.01x slower +806.55 ns
+# alt2_get        0.70 M - 3.58x slower +1034.94 ns
+# ------------------------------------------------------------------------------
 
-keyvalues = for x <- 0..255, y <- 0..255, do: {<<x, y>>, <<x, y>>}
+# IPv6 style keys (128 bits)
+# ------------------------------------------------------------------------------
+# Name               ips        average  deviation         median         99th %
+# alt0_get        1.23 M        0.81 μs  ±4756.09%        0.68 μs        1.39 μs
+# rdx_get         1.21 M        0.83 μs  ±6366.42%        0.66 μs        1.63 μs
+# alt1_get        1.04 M        0.96 μs  ±3957.69%        0.82 μs        1.62 μs
+# alt3_get        0.63 M        1.58 μs  ±2920.43%        1.21 μs        3.25 μs
+# alt4_get        0.40 M        2.47 μs  ±1477.23%        2.19 μs        4.69 μs
+# alt2_get        0.23 M        4.43 μs   ±319.15%        4.20 μs        5.55 μs
 
-rdx = Radix.new(keyvalues)
+# Comparison: 
+# alt0_get        1.23 M
+# rdx_get         1.21 M - 1.02x slower +0.0130 μs
+# alt1_get        1.04 M - 1.19x slower +0.152 μs
+# alt3_get        0.63 M - 1.94x slower +0.76 μs
+# alt4_get        0.40 M - 3.05x slower +1.66 μs
+# alt2_get        0.23 M - 5.45x slower +3.61 μs
+# ------------------------------------------------------------------------------
 
 defmodule Alt0 do
   # bitstring decode inlined in leaf fun
@@ -159,8 +186,6 @@ defmodule Alt4 do
       else: 0
   end
 
-  # do: :erlang.bsr(key, max - pos - 1) |> :erlang.band(1)
-
   # root/internal node is {b,l,r}
   # leaf is nil or [{k,v}, _]
   def leaf({bit, l, r}, key, max) do
@@ -190,20 +215,23 @@ defmodule Alt4 do
   end
 end
 
-x = :rand.uniform(255)
-y = :rand.uniform(255)
-IO.inspect(Alt0.get(rdx, <<x, y>>), label: :alt0_get)
-IO.inspect(Alt1.get(rdx, <<x, y>>), label: :alt1_get)
-IO.inspect(Alt2.get(rdx, <<x, y>>), label: :alt2_get)
-IO.inspect(Alt3.get(rdx, <<x, y>>), label: :alt3_get)
-IO.inspect(Alt4.get(rdx, <<x, y>>), label: :alt4_get)
-IO.inspect(Radix.get(rdx, <<x, y>>), label: :radix_get)
+keyvalues = for x <- 0..255, y <- 0..255, do: {<<x, y, x, y>>, <<x, y>>}
+
+rdx = Radix.new(keyvalues)
+key = Enum.shuffle(keyvalues) |> List.first() |> elem(0)
+
+IO.inspect(Alt0.get(rdx, key), label: :alt0_get)
+IO.inspect(Alt1.get(rdx, key), label: :alt1_get)
+IO.inspect(Alt2.get(rdx, key), label: :alt2_get)
+IO.inspect(Alt3.get(rdx, key), label: :alt3_get)
+IO.inspect(Alt4.get(rdx, key), label: :alt4_get)
+IO.inspect(Radix.get(rdx, key), label: :radix_get)
 
 Benchee.run(%{
-  "rdx_get" => fn -> Radix.get(rdx, <<x, y>>) end,
-  "alt0_get" => fn -> Alt0.get(rdx, <<x, y>>) end,
-  "alt1_get" => fn -> Alt1.get(rdx, <<x, y>>) end,
-  "alt2_get" => fn -> Alt2.get(rdx, <<x, y>>) end,
-  "alt3_get" => fn -> Alt3.get(rdx, <<x, y>>) end,
-  "alt4_get" => fn -> Alt4.get(rdx, <<x, y>>) end
+  "rdx_get" => fn -> Radix.get(rdx, key) end,
+  "alt0_get" => fn -> Alt0.get(rdx, key) end,
+  "alt1_get" => fn -> Alt1.get(rdx, key) end,
+  "alt2_get" => fn -> Alt2.get(rdx, key) end,
+  "alt3_get" => fn -> Alt3.get(rdx, key) end,
+  "alt4_get" => fn -> Alt4.get(rdx, key) end
 })
