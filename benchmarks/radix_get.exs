@@ -1,7 +1,7 @@
 alias Radix
 
 # Fastest way to get (exactly) a key,value-pair from a radix tree
-# - tree is densly populated
+# - tree is densely populated
 # - all bits of the key need to be checked
 
 # % mix run benchmarks/radix_get.exs
@@ -17,7 +17,7 @@ alias Radix
 # alt3_get        0.83 M     1208.43 ns  ±2640.45%        1090 ns        2066 ns
 # alt2_get        0.70 M     1436.82 ns  ±2460.20%        1284 ns        2092 ns
 
-# Comparison: 
+# Comparison:
 # alt4_get        2.49 M
 # rdx_get         1.28 M - 1.94x slower +378.16 ns
 # alt0_get        1.26 M - 1.98x slower +394.43 ns
@@ -36,7 +36,7 @@ alias Radix
 # alt4_get        0.40 M        2.47 μs  ±1477.23%        2.19 μs        4.69 μs
 # alt2_get        0.23 M        4.43 μs   ±319.15%        4.20 μs        5.55 μs
 
-# Comparison: 
+# Comparison:
 # alt0_get        1.23 M
 # rdx_get         1.21 M - 1.02x slower +0.0130 μs
 # alt1_get        1.04 M - 1.19x slower +0.152 μs

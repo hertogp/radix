@@ -119,7 +119,7 @@ defmodule RadixTest do
     assert_raise(RadixError, fn -> dot(@broken_left_tree) end)
     assert_raise(RadixError, fn -> dot(@broken_right_tree) end)
 
-    # dot handles emtpy tree
+    # dot handles empty tree
     g = new() |> dot()
     assert length(g) > 0
 

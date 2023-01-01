@@ -3,7 +3,7 @@ defmodule Radix.MixProject do
 
   # Before publishing to Hex:
   # - ensure right version tag in mix.exs, README.md and CHANGELOG.md
-  # - git uptodate
+  # - git up to date
   # - ci is ok
   # - mix test
   # - mix docz

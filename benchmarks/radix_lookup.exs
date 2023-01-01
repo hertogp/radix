@@ -1,7 +1,7 @@
 alias Radix
 
 # Fastest way to lookup (lpm) a key,value-pair in a radix tree
-# - tree is densly populated
+# - tree is densely populated
 # - almost all bits of the key need to be checked
 # - each leaf has a list of 7 prefixes
 
