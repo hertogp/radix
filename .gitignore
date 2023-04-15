@@ -28,3 +28,6 @@ radix-*.tar
 
 # Temporary files for e.g. tests
 /tmp
+
+# Notes during development
+/notes/
