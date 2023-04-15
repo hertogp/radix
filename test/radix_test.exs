@@ -1320,6 +1320,38 @@ defmodule RadixTest do
            ]
   end
 
+  test "walk/4 handles empty leaf" do
+    t = new([{<<0::16>>, 0}, {<<3>>, 3}, {<<4>>, 4}, {<<0>>, 0}])
+    # {0, {5, {6, [{<<0, 0>>, 0}, {<<0>>, 0}], [{<<3>>, 3}]}, [{<<4>>, 3}]}, nil}
+
+    # f collects entries from leaf's
+    f = fn
+      acc, {_b, _l, _r} -> acc
+      acc, leaf -> Enum.reduce(leaf, acc, fn {k, _v}, acc -> [k | acc] end)
+    end
+
+    inorder =
+      t
+      |> walk([], f, :inorder)
+      |> Enum.reverse()
+
+    assert inorder == [<<0, 0>>, <<0>>, <<3>>, <<4>>]
+
+    postorder =
+      t
+      |> walk([], f, :postorder)
+      |> Enum.reverse()
+
+    assert postorder == [<<0, 0>>, <<0>>, <<3>>, <<4>>]
+
+    preorder =
+      t
+      |> walk([], f, :preorder)
+      |> Enum.reverse()
+
+    assert preorder == [<<0, 0>>, <<0>>, <<3>>, <<4>>]
+  end
+
   test "walk/4 visits all nodes - pre-order" do
     t =
       new()

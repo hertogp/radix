@@ -523,6 +523,9 @@ defmodule Radix do
   defp walkp(acc, fun, [{k, _v} | _tail] = leaf, _order) when is_bitstring(k),
     do: fun.(acc, leaf)
 
+  defp walkp(acc, _fun, nil = _leaf, _order),
+    do: acc
+
   defp walkp(_acc, _fun, node, _order),
     do: raise(error(:badnode, node))
 
@@ -1099,7 +1102,7 @@ defmodule Radix do
       #
       iex> less(t, <<1, 1, 0, 0>>, exclude: true)
       [{<<1, 1, 0>>, 24}, {<<1, 1>>, 16}]
-      # 
+      #
       # search key itself does not have to exist in the tree
       iex> less(t, <<1, 1, 0, 25>>)
       [{<<1, 1, 0>>, 24}, {<<1, 1>>, 16}]
@@ -1385,7 +1388,7 @@ defmodule Radix do
   existing value.
 
   Optionally specify `recurse: true` to keep pruning as long as pruning changes
-  the tree.  
+  the tree.
 
   ## Examples
 
@@ -1847,18 +1850,31 @@ defmodule Radix do
   -  (`t:acc/0`, `t:tree/0`) -> `t:acc/0`
   -  (`t:acc/0`, `t:leaf/0`) -> `t:acc/0`
 
-  Note that `t:leaf/0` might be nil.
+  ## Examples
 
-  ## Example
+  Get all values in the tree.
 
       iex> t = new([{<<1>>, 1}, {<<2>>, 2}, {<<3>>, 3}, {<<128>>, 128}])
       iex> f = fn
       ...>   (acc, {_bit, _left, _right}) -> acc
-      ...>   (acc, nil) -> acc
       ...>   (acc, leaf) -> acc ++ Enum.map(leaf, fn {_k, v} -> v end)
       ...> end
       iex> walk(t, [], f)
       [1, 2, 3, 128]
+
+  Minimize a tree by dropping more specifics.
+
+      iex> t = new([{<<0::16>>, 0}, {<<3>>, 3}, {<<4>>, 3}, {<<0>>, 0}])
+      iex> Radix.count(t)
+      4
+      iex> f = fn
+      ...>  (acc, {_, _, _}) -> acc
+      ...>  (acc, leaf) -> [Enum.at(leaf, -1) | acc]
+      ...> end
+      iex>
+      iex> t2 = walk(t, [], f) |> new()
+      iex> Radix.count(t2)
+      3
 
   """
   @spec walk(tree, acc, (acc, tree | leaf -> acc), atom) :: acc

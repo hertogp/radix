@@ -7,9 +7,15 @@ Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## unreleased
+## [v0.4.1] - 2023-04-15
 
-- [x] more tests
+### fixed
+
+- fix bug in walk, should not choke on a leaf being nil.
+
+### added
+
+- more tests
 
 
 ## [v0.4.0] - 2021-12-04

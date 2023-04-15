@@ -6,13 +6,13 @@ defmodule Radix.MixProject do
   # - git up to date
   # - ci is ok
   # - mix test
-  # - mix docz
+  # - mix docs
   # - mix dialyzer
   # - git tag -a vx.y.z -m 'Release vx.y.z'
   # - git push --tags
   # mix hex.publish
 
-  @version "0.4.0"
+  @version "0.4.1"
   @source_url "https://github.com/hertogp/radix"
 
   def project do
