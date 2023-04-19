@@ -12,7 +12,7 @@ defmodule Radix.MixProject do
   # - git push --tags
   # mix hex.publish
 
-  @version "0.4.1"
+  @version "0.5.0"
   @source_url "https://github.com/hertogp/radix"
 
   def project do

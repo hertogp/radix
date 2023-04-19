@@ -193,6 +193,7 @@ defmodule Radix do
     do: raise(error(:badnode, tree))
 
   # always keep the root, eliminate empty nodes and promote half-empty nodes
+  @spec deletep(tree) :: tree | nil
   defp deletep({0, l, r}), do: {0, l, r}
   defp deletep({_, nil, nil}), do: nil
   defp deletep({_, l, nil}), do: l
@@ -1229,6 +1230,85 @@ defmodule Radix do
     do: raise(arg_err(:bad_tree, tree1))
 
   @doc """
+  Minimizes a radix tree by removing more specific keys and pruning adjacent keys,
+  where allowed.
+
+  The radix tree is traversed and a new tree is built.  Whenever two keys can
+  be combined `fun/2` is called with the values stored under the keys to be
+  combined..  If that returns `{:ok, value}` that value will be stored on
+  the least specific key.  That means more specific keys are effectively
+  deleted from the tree and any remaining neighbouring keys are combined to
+  their parent key and the more specific neighbours are deleted.
+
+  ## Examples
+
+  Combine neighbouring keys when they store the same value.
+
+      iex> f = fn v1, v2 -> if v1 == v2, do: {:ok, v1} end
+      iex> [{<<1, 0>>, 0}, {<<1, 1>>, 0}]
+      ...> |> new()
+      ...> |> minimize(f)
+      ...> |> to_list()
+      [{<<1, 0::size(7)>>, 0}]
+
+  Remove more specific keys if they have the same value as some less specific key.
+
+      iex> f = fn v1, v2 -> if v1 == v2, do: {:ok, v1} end
+      iex> [{<<1>>, 0}, {<<1, 0>>, 0}, {<<1, 0, 1>>, 0}]
+      ...> |> new()
+      ...> |> minimize(f)
+      ...> |> to_list()
+      [{<<1>>, 0}]
+
+  Summarize statistics keeping the least specific key.
+
+      iex> f = fn v1, v2 -> {:ok, v1 + v2} end
+      iex> [{<<1>>, 12}, {<<1, 0::size(7)>>, 10}, {<<1, 0>>, 10}, {<<1, 1>>, 10}]
+      ...> |> new()
+      ...> |> minimize(f)
+      ...> |> to_list()
+      [{<<1>>, 42}]
+
+  """
+  @spec minimize(tree, function) :: tree
+  def minimize(tree, fun) when is_function(fun, 2) do
+    minimizer = fn
+      trie, {_, _, _} ->
+        trie
+
+      trie, leaf ->
+        leaf
+        |> Enum.reverse()
+        |> Enum.reduce(trie, fn {k, v}, acc ->
+          with {key, value} <- Radix.lookup(acc, k),
+               {:ok, vnew} <- fun.(value, v) do
+            # key might be less specific or is the same as k
+            Radix.put(acc, key, vnew)
+          else
+            nil -> Radix.put(acc, k, v)
+          end
+        end)
+    end
+
+    # Since we prune after minimizing, two neighbors with a less specific parent
+    # will have different values and so cannot be combined.
+    pruner = fn
+      {_p0, _p1, v1, _p2, v2} -> fun.(v1, v2)
+      _ -> nil
+    end
+
+    tree
+    |> walk(new(), minimizer)
+    |> prune(pruner, recurse: true)
+  end
+
+  def minimize(tree, fun) when is_function(fun, 2),
+    do: raise(arg_err(:bad_tree, tree))
+
+  def minimize(_tree, fun),
+    do: raise(arg_err(:bad_fun, {fun, 2}))
+
+  @doc """
   Returns all key,value-pairs where the given search `key` is a prefix for a stored key.
 
   Collects key,value-pairs where the stored key is the same or more specific.
@@ -1862,19 +1942,15 @@ defmodule Radix do
       iex> walk(t, [], f)
       [1, 2, 3, 128]
 
-  Minimize a tree by dropping more specifics.
+  Get all the keys in the tree
 
-      iex> t = new([{<<0::16>>, 0}, {<<3>>, 3}, {<<4>>, 3}, {<<0>>, 0}])
-      iex> Radix.count(t)
-      4
+      iex> t = new([{<<1>>, 1}, {<<2>>, 2}, {<<3>>, 3}, {<<128>>, 128}])
       iex> f = fn
-      ...>  (acc, {_, _, _}) -> acc
-      ...>  (acc, leaf) -> [Enum.at(leaf, -1) | acc]
+      ...>   (acc, {_bit, _left, _right}) -> acc
+      ...>   (acc, leaf) -> acc ++ Enum.map(leaf, fn {k, _v} -> k end)
       ...> end
-      iex>
-      iex> t2 = walk(t, [], f) |> new()
-      iex> Radix.count(t2)
-      3
+      iex> walk(t, [], f)
+      [<<1>>, <<2>>, <<3>>, <<128>>]
 
   """
   @spec walk(tree, acc, (acc, tree | leaf -> acc), atom) :: acc

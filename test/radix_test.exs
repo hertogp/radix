@@ -697,6 +697,103 @@ defmodule RadixTest do
     assert count(t3) == 6
   end
 
+  # [[ minimize/2 ]]
+  test "minimize/2 validates input" do
+    goodfun = fn v1, v2 -> if v1 == v2, do: {:ok, v1} end
+    badfun1 = fn v -> v end
+    badfun2 = fn v1, v2, v3 -> if v1 == v2 and v1 == v3, do: {:ok, v1} end
+
+    for t <- @bad_trees,
+        do: assert_raise(ArgumentError, fn -> minimize(t, goodfun) end)
+
+    for f <- [badfun1, badfun2],
+        do: assert_raise(ArgumentError, fn -> minimize(new(), f) end)
+  end
+
+  test "minimize/2 handles empty tree" do
+    f = fn v1, v2 -> if v1 == v2, do: {:ok, v1} end
+
+    t =
+      new()
+      |> minimize(f)
+
+    assert count(t) == 0
+    assert empty?(t) == true
+  end
+
+  test "minimize/2 calls fun with least specific key's value, more specific key's value" do
+    f = fn v1, v2 ->
+      assert v1 < v2
+      if v1 == v2, do: {:ok, v1}
+    end
+
+    [{<<1>>, 1}, {<<1, 0>>, 2}, {<<2, 2>>, 1}, {<<2, 2, 0>>, 2}]
+    |> new()
+    |> minimize(f)
+  end
+
+  test "minimize/2 calls fun with left neigh value, right neigh value" do
+    f = fn v1, v2 ->
+      assert v1 < v2
+      if v1 == v2, do: {:ok, v1}
+    end
+
+    [{<<1, 0>>, 1}, {<<1, 1>>, 2}, {<<2, 2, 0>>, 1}, {<<2, 2, 1>>, 2}]
+    |> new()
+    |> minimize(f)
+  end
+
+  test "minimize/2 combines neighbours" do
+    f = fn v1, v2 -> if v1 == v2, do: {:ok, v1} end
+
+    t =
+      [{<<1, 0>>, 1}, {<<1, 1>>, 1}, {<<2, 2, 0>>, 1}, {<<2, 2, 1>>, 1}]
+      |> new()
+      |> minimize(f)
+
+    assert count(t) == 2
+    assert get(t, <<1, 0::size(7)>>) == {<<1, 0::size(7)>>, 1}
+    assert get(t, <<2, 2, 0::size(7)>>) == {<<2, 2, 0::size(7)>>, 1}
+  end
+
+  test "minimize/2 combines two neighbours with existing parent" do
+    f = fn v1, v2 -> {:ok, v1 + v2} end
+
+    t =
+      [
+        {<<1>>, 8},
+        {<<1, 0>>, 1},
+        {<<1, 1>>, 1},
+        {<<2, 2>>, 40},
+        {<<2, 2, 0>>, 1},
+        {<<2, 2, 1>>, 1}
+      ]
+      |> new()
+      |> minimize(f)
+
+    assert count(t) == 2
+    assert get(t, <<1>>) == {<<1>>, 10}
+    assert get(t, <<2, 2>>) == {<<2, 2>>, 42}
+  end
+
+  test "minimize/2 deletes more specific keys" do
+    f = fn v1, v2 -> {:ok, v1 + v2} end
+
+    t =
+      [
+        {<<1>>, 8},
+        {<<1, 1>>, 1},
+        {<<2, 2>>, 40},
+        {<<2, 2, 0>>, 1}
+      ]
+      |> new()
+      |> minimize(f)
+
+    assert count(t) == 2
+    assert get(t, <<1>>) == {<<1>>, 9}
+    assert get(t, <<2, 2>>) == {<<2, 2>>, 41}
+  end
+
   # Radix.more/2
   test "more/2 validates input" do
     for t <- @bad_trees, do: assert_raise(ArgumentError, fn -> more(t, <<>>) end)

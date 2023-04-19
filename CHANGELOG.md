@@ -7,11 +7,18 @@ Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [v0.5.0] - 2023-04-19
+
+### added
+
+- `Radix.minimize/2` to easily minimize a radix tree.
+
+
 ## [v0.4.1] - 2023-04-15
 
 ### fixed
 
-- fix bug in walk, should not choke on a leaf being nil.
+- fixed bug in `Radix.walk/4`, should not choke on a leaf being nil.
 
 ### added
 

@@ -124,7 +124,7 @@ list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:radix, "~> 0.4"}
+    {:radix, "~> 0.5"}
   ]
 end
 ```
