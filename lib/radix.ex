@@ -1285,6 +1285,8 @@ defmodule Radix do
             # key might be less specific or is the same as k
             Radix.put(acc, key, vnew)
           else
+            # TODO: maybe use _nil rather than nil since (user) might return something
+            # other than {:ok, value} and it might not be nil
             nil -> Radix.put(acc, k, v)
           end
         end)
