@@ -29,40 +29,46 @@ alias Radix
 # IPv6 style keys (128 bits)
 # ------------------------------------------------------------------------------
 # Name               ips        average  deviation         median         99th %
-# alt0_get        1.23 M        0.81 μs  ±4756.09%        0.68 μs        1.39 μs
-# rdx_get         1.21 M        0.83 μs  ±6366.42%        0.66 μs        1.63 μs
-# alt1_get        1.04 M        0.96 μs  ±3957.69%        0.82 μs        1.62 μs
-# alt3_get        0.63 M        1.58 μs  ±2920.43%        1.21 μs        3.25 μs
-# alt4_get        0.40 M        2.47 μs  ±1477.23%        2.19 μs        4.69 μs
-# alt2_get        0.23 M        4.43 μs   ±319.15%        4.20 μs        5.55 μs
-
+# rdx_get         1.30 M        0.77 μs  ±5426.16%        0.61 μs        1.56 μs
+# alt0_get        1.28 M        0.78 μs  ±5271.46%        0.63 μs        1.71 μs
+# alt1_get        1.05 M        0.95 μs  ±4313.16%        0.78 μs        2.25 μs
+# alt3_get        0.80 M        1.25 μs  ±2320.08%        1.07 μs        3.31 μs
+# alt4_get        0.38 M        2.60 μs   ±285.08%        2.39 μs        6.27 μs
+# alt2_get        0.22 M        4.56 μs   ±319.85%        4.26 μs        7.88 μs
+#
 # Comparison:
-# alt0_get        1.23 M
-# rdx_get         1.21 M - 1.02x slower +0.0130 μs
-# alt1_get        1.04 M - 1.19x slower +0.152 μs
-# alt3_get        0.63 M - 1.94x slower +0.76 μs
-# alt4_get        0.40 M - 3.05x slower +1.66 μs
-# alt2_get        0.23 M - 5.45x slower +3.61 μs
+# rdx_get         1.30 M
+# alt0_get        1.28 M - 1.01x slower +0.00839 μs
+# alt1_get        1.05 M - 1.23x slower +0.180 μs
+# alt3_get        0.80 M - 1.62x slower +0.48 μs
+# alt4_get        0.38 M - 3.37x slower +1.83 μs
+# alt2_get        0.22 M - 5.91x slower +3.79 μs
 # ------------------------------------------------------------------------------
+
+# [[ Conclusion ]]
+# For longer bitstrings (e.g. IPv6) Radix becomes faster than the alternatives.
 
 defmodule Alt0 do
   # bitstring decode inlined in leaf fun
 
   # root/internal node is {b,l,r}
   # leaf is nil or [{k,v}, _]
-  def leaf({bit, l, r}, key, max) when bit < max do
-    <<_::size(bit), bit::1, _::bitstring>> = key
+  def leaf(tree, key, max) do
+    case tree do
+      {bit, l, r} when bit < max ->
+        <<_::size(bit), bit::1, _::bitstring>> = key
 
-    case(bit) do
-      0 -> leaf(l, key, max)
-      1 -> leaf(r, key, max)
+        if bit == 0,
+          do: leaf(l, key, max),
+          else: leaf(r, key, max)
+
+      {_, l, _} ->
+        leaf(l, key, max)
+
+      leaf ->
+        leaf
     end
   end
-
-  def leaf({_, l, _}, key, max),
-    do: leaf(l, key, max)
-
-  def leaf(leaf, _key, _max), do: leaf
 
   def get({0, _, _} = tree, key, default \\ nil) do
     # leaf -> :lists.keyfind(key, 1, leaf) || default
@@ -181,9 +187,12 @@ defmodule Alt4 do
 
   @compile {:inline, bit: 3}
   defp bit(key, pos, max) do
-    if pos < max,
-      do: :erlang.bsl(1, max - pos - 1) |> :erlang.band(key),
-      else: 0
+    if pos < max do
+      test = :erlang.bsl(1, max - pos - 1)
+      :erlang.band(test, key)
+    else
+      0
+    end
   end
 
   # root/internal node is {b,l,r}
@@ -215,7 +224,8 @@ defmodule Alt4 do
   end
 end
 
-keyvalues = for x <- 0..255, y <- 0..255, do: {<<x, y, x, y>>, <<x, y>>}
+keyvalues =
+  for x <- 0..255, y <- 0..255, do: {<<x, y, x, y, x, y, x, y, x, y, x, y, x, y, x, y>>, <<x, y>>}
 
 rdx = Radix.new(keyvalues)
 key = Enum.shuffle(keyvalues) |> List.first() |> elem(0)

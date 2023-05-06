@@ -34,7 +34,7 @@ alias Radix
 # k1_bits       344.60 K        2.90 μs  ±1203.98%        2.50 μs        6.34 μs
 # k2_tuple      317.60 K        3.15 μs   ±946.37%        2.82 μs        5.69 μs
 
-# Comparison: 
+# Comparison:
 # k3_int        402.56 K
 # k4_int        401.28 K - 1.00x slower +0.00792 μs
 # k1_bits       344.60 K - 1.17x slower +0.42 μs
@@ -47,16 +47,20 @@ alias Radix
 # k4_int         57.20 K       17.48 μs    ±41.97%       16.60 μs       37.77 μs
 # k3_int         55.09 K       18.15 μs    ±90.91%       17.47 μs       34.47 μs
 
-# Comparison: 
+# Comparison:
 # k1_bits       102.13 K
 # k2_tuple       89.30 K - 1.14x slower +1.41 μs
 # k4_int         57.20 K - 1.79x slower +7.69 μs
 # k3_int         55.09 K - 1.85x slower +8.36 μs
 
+# [[ Conclusion ]]
+#
+# Decomposing a bitstring is the fastest method.
+
 defmodule Alt1 do
-  # bitstring
+  # key is a bitstring
+
   def bit(key, pos, max) do
-    # key is a bitstring
     if pos < max do
       <<_::size(pos), bit::1, _::bitstring>> = key
       bit
@@ -66,21 +70,21 @@ defmodule Alt1 do
   end
 
   def test(key) do
-    # no convert key
+    # no need to convert key
     max = bit_size(key)
     for pos <- 0..max, do: bit(key, pos, max)
   end
 end
 
 defmodule Alt2 do
-  # tuple
+  # key is a tuple
   def make_key(key) do
     k = for <<x::1 <- key>>, do: x
     List.to_tuple(k)
   end
 
+  # key is tuple of bits
   def bit(key, pos, max) do
-    # key is tuple of bits
     if pos < max,
       do: elem(key, pos),
       else: 0
@@ -126,7 +130,6 @@ defmodule Alt4 do
   end
 
   def bit(key, pos, max) do
-    # key is integer
     :erlang.band(1, :erlang.bsr(key, max - pos - 1))
   end
 
