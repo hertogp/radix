@@ -71,12 +71,16 @@ defmodule Alt0 do
   end
 
   def get({0, _, _} = tree, key, default \\ nil) do
-    # leaf -> :lists.keyfind(key, 1, leaf) || default
     kmax = :erlang.bit_size(key)
 
+    # leaf -> :lists.keyfind(key, 1, leaf) || default
+    # using leaf_get is faster than :lists.keyfind
     case leaf(tree, key, kmax) do
-      nil -> default
-      leaf -> leaf_get(leaf, key, kmax) || default
+      nil ->
+        default
+
+      leaf ->
+        leaf_get(leaf, key, kmax) || default
     end
   end
 
